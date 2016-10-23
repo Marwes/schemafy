@@ -38,8 +38,8 @@ fn field(s: &str) -> Tokens {
                 prev_was_upper = false;
             }
         }
-        if snake != s {
-            let field = Ident(snake);
+        if snake != s || snake.contains(|c: char| c == '$' || c == '#') {
+            let field = Ident(snake.replace('$', "").replace('#', ""));
             quote!{
                 #[serde(rename = #s)]
                 pub #field
@@ -65,12 +65,17 @@ fn merge(result: &mut Schema, r: &Schema) {
 }
 
 struct Expander<'r> {
+    root_name: Option<&'r str>,
     root: &'r Schema,
 }
 
 impl<'r> Expander<'r> {
     fn type_ref(&self, s: &str) -> String {
-        s.split('/').last().expect("Component").into()
+        if s == "#" {
+            self.root_name.expect("Root name").into()
+        } else {
+            s.split('/').last().expect("Component").into()
+        }
     }
 
     fn schema(&self, s: &'r Schema) -> &'r Schema {
@@ -112,9 +117,10 @@ impl<'r> Expander<'r> {
                 Type::Number => "f64".into(),
                 Type::Object => "serde_json::Value".into(),
                 Type::Array => {
-                    let item_schema =
-                        typ.items.as_ref().expect("Array type must have items schema");
-                    format!("Vec<{}>", self.expand_type(item_schema))
+                    let item_type =
+                        typ.items.as_ref().map_or("json_schema::Value".into(),
+                                                  |item_schema| self.expand_type(item_schema));
+                    format!("Vec<{}>", item_type)
                 }
                 _ => panic!("Type"),
             }
@@ -149,19 +155,31 @@ impl<'r> Expander<'r> {
         }
     }
 
-    pub fn expand_schema(&mut self, schema: &Schema) -> Tokens {
+    pub fn expand_definitions(&mut self, schema: &Schema) -> Vec<Tokens> {
         let mut types = Vec::new();
         for (name, def) in &schema.definitions {
-            let fields = self.expand_fields(def);
-            let name = Ident(name);
-            let tokens = quote! {
-                #[derive(Deserialize, Serialize)]
-                pub struct #name {
-                    #(#fields),*
-                }
-            };
-            types.push(tokens);
+            types.push(self.expand_schema(name, def));
         }
+        types
+    }
+
+    pub fn expand_schema(&mut self, name: &str, schema: &Schema) -> Tokens {
+        let fields = self.expand_fields(schema);
+        let name = Ident(name);
+        quote! {
+            #[derive(Deserialize, Serialize)]
+            pub struct #name {
+                #(#fields),*
+            }
+        }
+    }
+
+    pub fn expand(&mut self, schema: &Schema) -> Tokens {
+        let mut types = self.expand_definitions(schema);
+        if let Some(name) = self.root_name {
+            types.push(self.expand_schema(name, schema));
+        }
+
         quote! { #(
             #types
             )*
@@ -169,13 +187,16 @@ impl<'r> Expander<'r> {
     }
 }
 
-pub fn generate(s: &str) -> Result<String, Box<Error>> {
+pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
     use std::process::{Command, Stdio};
     use std::io::Write;
 
     let schema = serde_json::from_str(s).unwrap();
-    let mut expander = Expander { root: &schema };
-    let output = expander.expand_schema(&schema).to_string();
+    let mut expander = Expander {
+        root_name: root_name,
+        root: &schema,
+    };
+    let output = expander.expand(&schema).to_string();
     let mut child =
         try!(Command::new("rustfmt").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
     try!(child.stdin.as_mut().expect("stdin").write_all(output.as_bytes()));
@@ -193,10 +214,19 @@ mod tests {
     use std::process::{Command, Stdio};
 
     #[test]
+    fn generate_schema() {
+        let s = include_str!("../../json-schema/tests/schema.json");
+
+        let s = generate(Some("Schema"), s).unwrap().to_string();
+
+        assert!(s.contains("pub struct Schema"), "{}", s);
+    }
+
+    #[test]
     fn builds_with_rustc() {
         let s = include_str!("../../json-schema/tests/debugserver-schema.json");
 
-        let s = generate(s).unwrap().to_string();
+        let s = generate(None, s).unwrap().to_string();
 
         let mut filename = PathBuf::from("target/debug");
         filename.push("test.rs");

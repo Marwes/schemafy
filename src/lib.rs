@@ -85,7 +85,7 @@ impl<'r> Expander<'r> {
                 Type::Integer => "i64".into(),
                 Type::Boolean => "bool".into(),
                 Type::Number => "f64".into(),
-                Type::Object => "obj".into(),
+                Type::Object => "serde_json::Value".into(),
                 Type::Array => {
                     let item_schema =
                         typ.items.as_ref().expect("Array type must have items schema");

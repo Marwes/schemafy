@@ -70,6 +70,29 @@ struct Expander<'r> {
     root: &'r Schema,
 }
 
+struct FieldExpander<'a, 'r: 'a> {
+    default: bool,
+    expander: &'a mut Expander<'r>,
+}
+
+impl<'a, 'r> FieldExpander<'a, 'r> {
+    fn expand_fields(&mut self, type_name: &str, schema: &Schema) -> Vec<Tokens> {
+        let schema = self.expander.schema(schema);
+        schema.properties
+            .iter()
+            .map(|(field_name, value)| {
+                let key = field(field_name);
+                let required = schema.required.iter().any(|req| req == field_name);
+                let typ = Ident(self.expander.expand_type(type_name, required, value));
+                if typ.0 == "serde_json::Value" {
+                    self.default = false;
+                }
+                quote!( #key : #typ )
+            })
+            .collect()
+    }
+}
+
 impl<'r> Expander<'r> {
     fn type_ref(&self, s: &str) -> String {
         if s == "#" {
@@ -112,14 +135,20 @@ impl<'r> Expander<'r> {
         })
     }
 
-    fn expand_type(&mut self, type_name: &str, typ: &Schema) -> String {
+    fn expand_type(&mut self, type_name: &str, required: bool, typ: &Schema) -> String {
         let result = self.expand_type_(typ);
-        if type_name == result {
+        let result = if type_name == result {
             format!("Box<{}>", result)
         } else {
             result
+        };
+        if required {
+            result
+        } else {
+            format!("Option<{}>", result)
         }
     }
+
     fn expand_type_(&mut self, typ: &Schema) -> String {
         if let Some(ref ref_) = typ.ref_ {
             self.type_ref(ref_)
@@ -149,18 +178,6 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn expand_fields(&mut self, type_name: &str, schema: &Schema) -> Vec<Tokens> {
-        let schema = self.schema(schema);
-        schema.properties
-            .iter()
-            .map(|(key, value)| {
-                let key = field(key);
-                let typ = Ident(self.expand_type(type_name, value));
-                quote!( #key : #typ )
-            })
-            .collect()
-    }
-
     pub fn expand_definitions(&mut self, schema: &Schema) -> Vec<Tokens> {
         let mut types = Vec::new();
         for (name, def) in &schema.definitions {
@@ -170,19 +187,44 @@ impl<'r> Expander<'r> {
     }
 
     pub fn expand_schema(&mut self, name: &str, schema: &Schema) -> Tokens {
-        let fields = self.expand_fields(name, schema);
+        let (fields, default) = {
+            let mut field_expander = FieldExpander {
+                default: true,
+                expander: self,
+            };
+            let fields = field_expander.expand_fields(name, schema);
+            (fields, field_expander.default)
+        };
+
         let name = Ident(name);
-        if fields.is_empty() {
-            let typ = Ident(self.expand_type("", schema));
-            quote! {
-                pub type #name = #typ;
+        if !fields.is_empty() {
+            if default {
+                quote! {
+                    #[derive(Default, Deserialize, Serialize)]
+                    pub struct #name {
+                        #(#fields),*
+                    }
+                }
+            } else {
+                quote! {
+                    #[derive(Deserialize, Serialize)]
+                    pub struct #name {
+                        #(#fields),*
+                    }
+                }
             }
-        } else {
+        } else if !schema.enum_.is_empty() {
+            let variants = schema.enum_.iter().map(Ident);
             quote! {
                 #[derive(Deserialize, Serialize)]
-                pub struct #name {
-                    #(#fields),*
+                pub enum #name {
+                    #(#variants),*
                 }
+            }
+        } else {
+            let typ = Ident(self.expand_type("", true, schema));
+            quote! {
+                pub type #name = #typ;
             }
         }
     }

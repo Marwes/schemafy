@@ -100,7 +100,15 @@ impl<'r> Expander<'r> {
         })
     }
 
-    fn expand_type(&mut self, typ: &Schema) -> String {
+    fn expand_type(&mut self, type_name: &str, typ: &Schema) -> String {
+        let result = self.expand_type_(typ);
+        if type_name == result {
+            format!("Box<{}>", result)
+        } else {
+            result
+        }
+    }
+    fn expand_type_(&mut self, typ: &Schema) -> String {
         if let Some(ref ref_) = typ.ref_ {
             self.type_ref(ref_)
         } else if typ.type_.len() == 1 {
@@ -118,8 +126,8 @@ impl<'r> Expander<'r> {
                 Type::Object => "serde_json::Value".into(),
                 Type::Array => {
                     let item_type =
-                        typ.items.as_ref().map_or("json_schema::Value".into(),
-                                                  |item_schema| self.expand_type(item_schema));
+                        typ.items.as_ref().map_or("serde_json::Value".into(),
+                                                  |item_schema| self.expand_type_(item_schema));
                     format!("Vec<{}>", item_type)
                 }
                 _ => panic!("Type"),
@@ -129,10 +137,10 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn expand_fields(&mut self, schema: &Schema) -> Vec<Tokens> {
+    fn expand_fields(&mut self, type_name: &str, schema: &Schema) -> Vec<Tokens> {
         if let Some(ref ref_) = schema.ref_ {
             let schema = self.schema_ref(ref_);
-            self.expand_fields(schema)
+            self.expand_fields(type_name, schema)
         } else if !schema.allOf.is_empty() {
             let first = schema.allOf.first().unwrap().clone();
             let result = schema.allOf
@@ -142,13 +150,13 @@ impl<'r> Expander<'r> {
                     merge(&mut result, self.schema(def));
                     result
                 });
-            self.expand_fields(&result)
+            self.expand_fields(type_name, &result)
         } else {
             schema.properties
                 .iter()
                 .map(|(key, value)| {
                     let key = field(key);
-                    let typ = Ident(self.expand_type(value));
+                    let typ = Ident(self.expand_type(type_name, value));
                     quote!( #key : #typ )
                 })
                 .collect()
@@ -164,7 +172,7 @@ impl<'r> Expander<'r> {
     }
 
     pub fn expand_schema(&mut self, name: &str, schema: &Schema) -> Tokens {
-        let fields = self.expand_fields(schema);
+        let fields = self.expand_fields(name, schema);
         let name = Ident(name);
         quote! {
             #[derive(Deserialize, Serialize)]
@@ -220,16 +228,14 @@ mod tests {
         let s = generate(Some("Schema"), s).unwrap().to_string();
 
         assert!(s.contains("pub struct Schema"), "{}", s);
+
+        verify_compile("schema.rs", &s);
     }
 
-    #[test]
-    fn builds_with_rustc() {
-        let s = include_str!("../../json-schema/tests/debugserver-schema.json");
-
-        let s = generate(None, s).unwrap().to_string();
+    fn verify_compile(name: &str, s: &str) {
 
         let mut filename = PathBuf::from("target/debug");
-        filename.push("test.rs");
+        filename.push(name);
         {
             let mut file = File::create(&filename).unwrap();
             let header = r#"
@@ -253,5 +259,14 @@ mod tests {
         let output = child.wait_with_output().unwrap();
         let error = String::from_utf8(output.stderr).unwrap();
         assert!(output.status.success(), "{}", error);
+    }
+
+    #[test]
+    fn builds_with_rustc() {
+        let s = include_str!("../../json-schema/tests/debugserver-schema.json");
+
+        let s = generate(None, s).unwrap().to_string();
+
+        verify_compile("debug-server.rs", &s)
     }
 }

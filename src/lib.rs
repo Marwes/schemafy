@@ -325,14 +325,14 @@ impl<'r> Expander<'r> {
         if !fields.is_empty() {
             if default {
                 quote! {
-                    #[derive(Default, Deserialize, Serialize)]
+                    #[derive(Clone, Default, Deserialize, Serialize)]
                     pub struct #name {
                         #(#fields),*
                     }
                 }
             } else {
                 quote! {
-                    #[derive(Deserialize, Serialize)]
+                    #[derive(Clone, Deserialize, Serialize)]
                     pub struct #name {
                         #(#fields),*
                     }
@@ -346,7 +346,7 @@ impl<'r> Expander<'r> {
                 })
             });
             quote! {
-                #[derive(Deserialize, Serialize)]
+                #[derive(Clone, Deserialize, Serialize)]
                 pub enum #name {
                     #(#variants),*
                 }

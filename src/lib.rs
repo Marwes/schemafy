@@ -131,6 +131,7 @@ impl<'r> Expander<'r> {
             let fields = self.expand_fields(def);
             let name = Ident(name);
             let tokens = quote! {
+                #[derive(Deserialize, Serialize)]
                 pub struct #name {
                     #(#fields),*
                 }

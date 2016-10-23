@@ -260,8 +260,10 @@ impl<'r> Expander<'r> {
                 Some(ref item_schema) => {
                     if array.type_[0] == Type::Array && simple == self.schema(item_schema) {
                         self.needs_one_or_many = true;
-                        return format!("OneOrMany<{}>", self.expand_type_(&typ.anyOf[0]).typ)
-                            .into();
+                        return FieldType {
+                            typ: format!("OneOrMany<{}>", self.expand_type_(&typ.anyOf[0]).typ),
+                            default: true,
+                        };
                     }
                 }
                 _ => (),
@@ -411,7 +413,7 @@ mod tests {
 
         assert!(s.contains("pub struct Schema"), "{}", s);
         assert!(s.contains("pub type positiveInteger = i64"));
-        assert!(s.contains("pub type_: Option<OneOrMany<simpleTypes>>"));
+        assert!(s.contains("pub type_: OneOrMany<simpleTypes>"));
 
         let result = Command::new("rustc")
             .args(&["-L",

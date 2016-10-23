@@ -7,6 +7,8 @@ extern crate quote;
 use std::borrow::Cow;
 use std::error::Error;
 
+use serde_json::Value;
+
 use json_schema::{Schema, Type};
 
 use quote::{Tokens, ToTokens};
@@ -150,11 +152,16 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
             .map(|(field_name, value)| {
                 let key = field(field_name);
                 let required = schema.required.iter().any(|req| req == field_name);
-                let typ = Ident(self.expander.expand_type(type_name, required, value));
-                if !typ.0.starts_with("Option<") {
+                let field_type = self.expander.expand_type(type_name, required, value);
+                if !field_type.typ.starts_with("Option<") {
                     self.default = false;
                 }
-                quote!( #key : #typ )
+                let typ = Ident(field_type.typ);
+                if field_type.default {
+                    quote!( #[serde(default)] #key : #typ )
+                } else {
+                    quote!( #key : #typ )
+                }
             })
             .collect()
     }
@@ -164,6 +171,22 @@ struct Expander<'r> {
     root_name: Option<&'r str>,
     root: &'r Schema,
     needs_one_or_many: bool,
+}
+
+struct FieldType {
+    typ: String,
+    default: bool,
+}
+
+impl<S> From<S> for FieldType
+    where S: Into<String>
+{
+    fn from(s: S) -> FieldType {
+        FieldType {
+            typ: s.into(),
+            default: false,
+        }
+    }
 }
 
 impl<'r> Expander<'r> {
@@ -216,23 +239,20 @@ impl<'r> Expander<'r> {
         })
     }
 
-    fn expand_type(&mut self, type_name: &str, required: bool, typ: &Schema) -> String {
-        let result = self.expand_type_(typ);
-        let result = if type_name == result {
-            format!("Box<{}>", result)
-        } else {
-            result
-        };
-        if required {
-            result
-        } else {
-            format!("Option<{}>", result)
+    fn expand_type(&mut self, type_name: &str, required: bool, typ: &Schema) -> FieldType {
+        let mut result = self.expand_type_(typ);
+        if type_name == result.typ {
+            result.typ = format!("Box<{}>", result.typ)
         }
+        if !required && !result.default {
+            result.typ = format!("Option<{}>", result.typ)
+        }
+        result
     }
 
-    fn expand_type_(&mut self, typ: &Schema) -> String {
+    fn expand_type_(&mut self, typ: &Schema) -> FieldType {
         if let Some(ref ref_) = typ.ref_ {
-            self.type_ref(ref_)
+            self.type_ref(ref_).into()
         } else if typ.anyOf.len() == 2 {
             let simple = self.schema(&typ.anyOf[0]);
             let array = self.schema(&typ.anyOf[1]);
@@ -240,7 +260,8 @@ impl<'r> Expander<'r> {
                 Some(ref item_schema) => {
                     if array.type_[0] == Type::Array && simple == self.schema(item_schema) {
                         self.needs_one_or_many = true;
-                        return format!("OneOrMany<{}>", self.expand_type_(&typ.anyOf[0]));
+                        return format!("OneOrMany<{}>", self.expand_type_(&typ.anyOf[0]).typ)
+                            .into();
                     }
                 }
                 _ => (),
@@ -260,13 +281,18 @@ impl<'r> Expander<'r> {
                 Type::Number => "f64".into(),
                 Type::Object if typ.additionalProperties.is_some() => {
                     let prop = typ.additionalProperties.as_ref().unwrap();
-                    format!("::std::collections::HashMap<String, {}>", self.expand_type_(prop))
+                    let result =
+                        format!("::std::collections::HashMap<String, {}>", self.expand_type_(prop).typ);
+                    FieldType {
+                        typ: result,
+                        default: typ.default == Some(Value::Object(Default::default())),
+                    }
                 }
                 Type::Array => {
                     let item_type =
                         typ.items.as_ref().map_or("serde_json::Value".into(),
                                                   |item_schema| self.expand_type_(item_schema));
-                    format!("Vec<{}>", item_type)
+                    format!("Vec<{}>", item_type.typ).into()
                 }
                 _ => "serde_json::Value".into(),
             }
@@ -324,7 +350,7 @@ impl<'r> Expander<'r> {
                 }
             }
         } else {
-            let typ = Ident(self.expand_type("", true, schema));
+            let typ = Ident(self.expand_type("", true, schema).typ);
             quote! {
                 pub type #name = #typ;
             }

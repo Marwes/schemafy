@@ -163,12 +163,42 @@ pub fn generate(s: &str) -> Result<String, Box<Error>> {
 mod tests {
     use super::*;
 
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::PathBuf;
+    use std::process::{Command, Stdio};
+
     #[test]
-    fn attempt() {
+    fn builds_with_rustc() {
         let s = include_str!("../../json-schema/tests/debugserver-schema.json");
 
         let s = generate(s).unwrap().to_string();
-        println!("{}", s);
-        assert!(false);
+
+        let mut filename = PathBuf::from("target/debug");
+        filename.push("test.rs");
+        println!("{}", filename.display());
+        {
+            let mut file = File::create(&filename).unwrap();
+            let header = r#"
+            #![feature(proc_macro)]
+            
+            #[macro_use]
+            extern crate serde_derive;
+            extern crate serde_json;
+            "#;
+            file.write_all(header.as_bytes()).unwrap();
+            file.write_all(s.as_bytes()).unwrap();
+        }
+
+        let child = Command::new("rustc")
+            .args(&["-L", "target/debug/deps/", "--crate-type=rlib", filename.to_str().unwrap()])
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+
+        let output = child.wait_with_output().unwrap();
+        let error = String::from_utf8(output.stderr).unwrap();
+        assert!(output.status.success(), "{}", error);
     }
 }

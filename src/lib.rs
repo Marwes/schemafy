@@ -4,6 +4,7 @@ extern crate serde_json;
 #[macro_use]
 extern crate quote;
 
+use std::borrow::Cow;
 use std::error::Error;
 
 use json_schema::{Schema, Type};
@@ -78,12 +79,23 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn schema(&self, s: &'r Schema) -> &'r Schema {
-        if let Some(ref ref_) = s.ref_ {
-            self.schema_ref(ref_)
-        } else {
-            s
+    fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {
+        let result = match schema.allOf.first() {
+            Some(result) => {
+                schema.allOf
+                    .iter()
+                    .skip(1)
+                    .fold(Cow::Borrowed(result), |mut result, def| {
+                        merge(result.to_mut(), &self.schema(def));
+                        result
+                    })
+            }
+            None => Cow::Borrowed(schema),
+        };
+        if let Some(ref ref_) = result.ref_ {
+            return Cow::Borrowed(self.schema_ref(ref_));
         }
+        result
     }
 
     fn schema_ref(&self, s: &str) -> &'r Schema {
@@ -138,29 +150,15 @@ impl<'r> Expander<'r> {
     }
 
     fn expand_fields(&mut self, type_name: &str, schema: &Schema) -> Vec<Tokens> {
-        if let Some(ref ref_) = schema.ref_ {
-            let schema = self.schema_ref(ref_);
-            self.expand_fields(type_name, schema)
-        } else if !schema.allOf.is_empty() {
-            let first = schema.allOf.first().unwrap().clone();
-            let result = schema.allOf
-                .iter()
-                .skip(1)
-                .fold(first, |mut result, def| {
-                    merge(&mut result, self.schema(def));
-                    result
-                });
-            self.expand_fields(type_name, &result)
-        } else {
-            schema.properties
-                .iter()
-                .map(|(key, value)| {
-                    let key = field(key);
-                    let typ = Ident(self.expand_type(type_name, value));
-                    quote!( #key : #typ )
-                })
-                .collect()
-        }
+        let schema = self.schema(schema);
+        schema.properties
+            .iter()
+            .map(|(key, value)| {
+                let key = field(key);
+                let typ = Ident(self.expand_type(type_name, value));
+                quote!( #key : #typ )
+            })
+            .collect()
     }
 
     pub fn expand_definitions(&mut self, schema: &Schema) -> Vec<Tokens> {
@@ -174,10 +172,17 @@ impl<'r> Expander<'r> {
     pub fn expand_schema(&mut self, name: &str, schema: &Schema) -> Tokens {
         let fields = self.expand_fields(name, schema);
         let name = Ident(name);
-        quote! {
-            #[derive(Deserialize, Serialize)]
-            pub struct #name {
-                #(#fields),*
+        if fields.is_empty() {
+            let typ = Ident(self.expand_type("", schema));
+            quote! {
+                pub type #name = #typ;
+            }
+        } else {
+            quote! {
+                #[derive(Deserialize, Serialize)]
+                pub struct #name {
+                    #(#fields),*
+                }
             }
         }
     }
@@ -228,6 +233,7 @@ mod tests {
         let s = generate(Some("Schema"), s).unwrap().to_string();
 
         assert!(s.contains("pub struct Schema"), "{}", s);
+        assert!(s.contains("pub type positiveInteger = i64"));
 
         verify_compile("schema.rs", &s);
     }

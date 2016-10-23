@@ -1,4 +1,5 @@
 extern crate json_schema;
+extern crate serde_json;
 
 #[macro_use]
 extern crate quote;
@@ -25,11 +26,48 @@ fn field(s: &str) -> Ident<Cow<str>> {
     })
 }
 
-struct Expander;
+fn merge(result: &mut Schema, r: &Schema) {
+    use std::collections::hash_map::Entry;
 
-impl Expander {
+    for (k, v) in &r.properties {
+        match result.properties.entry(k.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(v.clone());
+            }
+            Entry::Occupied(mut entry) => merge(entry.get_mut(), v),
+        }
+    }
+}
+
+struct Expander<'r> {
+    root: &'r Schema,
+}
+
+impl<'r> Expander<'r> {
     fn type_ref(&self, s: &str) -> String {
         s.split('/').last().expect("Component").into()
+    }
+
+    fn schema(&self, s: &'r Schema) -> &'r Schema {
+        if let Some(ref ref_) = s.ref_ {
+            self.schema_ref(ref_)
+        } else {
+            s
+        }
+    }
+
+    fn schema_ref(&self, s: &str) -> &'r Schema {
+        s.split('/').fold(self.root, |schema, comp| {
+            if comp == "#" {
+                self.root
+            } else if comp == "definitions" {
+                schema
+            } else {
+                schema.definitions
+                    .get(comp)
+                    .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp))
+            }
+        })
     }
 
     fn expand_type(&mut self, typ: &Schema) -> String {
@@ -56,14 +94,36 @@ impl Expander {
         }
     }
 
+    fn expand_fields(&mut self, schema: &Schema) -> Vec<Tokens> {
+        if let Some(ref ref_) = schema.ref_ {
+            let schema = self.schema_ref(ref_);
+            self.expand_fields(schema)
+        } else if !schema.allOf.is_empty() {
+            let first = schema.allOf.first().unwrap().clone();
+            let result = schema.allOf
+                .iter()
+                .skip(1)
+                .fold(first, |mut result, def| {
+                    merge(&mut result, self.schema(def));
+                    result
+                });
+            self.expand_fields(&result)
+        } else {
+            schema.properties
+                .iter()
+                .map(|(key, value)| {
+                    let key = field(key);
+                    let typ = Ident(self.expand_type(value));
+                    quote!( #key : #typ )
+                })
+                .collect()
+        }
+    }
+
     pub fn expand_schema(&mut self, schema: &Schema) -> Tokens {
         let mut types = Vec::new();
         for (name, def) in &schema.definitions {
-            let fields = def.properties.iter().map(|(key, value)| {
-                let key = field(key);
-                let typ = Ident(self.expand_type(value));
-                quote!( #key : #typ )
-            });
+            let fields = self.expand_fields(def);
             let name = Ident(name);
             let tokens = quote! {
                 pub struct #name {
@@ -79,20 +139,22 @@ impl Expander {
     }
 }
 
+pub fn generate(s: &str) -> Tokens {
+    let schema = serde_json::from_str(s).unwrap();
+    let mut expander = Expander { root: &schema };
+    expander.expand_schema(&schema)
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use super::Expander;
-    extern crate serde_json;
 
     #[test]
     fn attempt() {
         let s = include_str!("../../json-schema/tests/debugserver-schema.json");
-        let schema = serde_json::from_str(s).unwrap();
 
-        let mut expander = Expander;
-        let s = expander.expand_schema(&schema).to_string();
+        let s = generate(s).to_string();
         println!("`{}`", s);
         assert!(false);
     }

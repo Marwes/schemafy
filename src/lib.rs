@@ -19,10 +19,82 @@ impl<S: AsRef<str>> ToTokens for Ident<S> {
     }
 }
 
-fn field(s: &str) -> Tokens {
+const ONE_OR_MANY: &'static str = r#"
+use std::ops::{Deref, DerefMut};
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OneOrMany<T> {
+    One(Box<T>),
+    Many(Vec<T>),
+}
+
+impl<T> Deref for OneOrMany<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        match *self {
+            OneOrMany::One(ref v) => unsafe { ::std::slice::from_raw_parts(&**v, 1) },
+            OneOrMany::Many(ref v) => v,
+        }
+    }
+}
+
+impl<T> DerefMut for OneOrMany<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        match *self {
+            OneOrMany::One(ref mut v) => unsafe { ::std::slice::from_raw_parts_mut(&mut **v, 1) },
+            OneOrMany::Many(ref mut v) => v,
+        }
+    }
+}
+
+impl<T> Default for OneOrMany<T> {
+    fn default() -> OneOrMany<T> {
+        OneOrMany::Many(Vec::new())
+    }
+}
+
+impl<T> serde::Deserialize for OneOrMany<T>
+    where T: serde::Deserialize
+{
+    fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
+        where D: serde::Deserializer
+    {
+        T::deserialize(deserializer)
+            .map(|one| OneOrMany::One(Box::new(one)))
+            .or_else(|_| Vec::<T>::deserialize(deserializer).map(OneOrMany::Many))
+    }
+}
+
+impl<T> serde::Serialize for OneOrMany<T>
+    where T: serde::Serialize
+{
+    fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
+        where S: serde::Serializer
+    {
+        match *self {
+            OneOrMany::One(ref one) => one.serialize(serializer),
+            OneOrMany::Many(ref many) => many.serialize(serializer),
+        }
+    }
+}
+"#;
+
+fn rename_keyword(prefix: &str, s: &str) -> Option<Tokens> {
     if ["type", "struct", "enum"].iter().any(|&keyword| keyword == s) {
         let n = Ident(format!("{}_", s));
-        quote!( #n )
+        let prefix = Ident(prefix);
+        Some(quote!{
+            #[serde(rename = #s)]
+            #prefix #n
+        })
+    } else {
+        None
+    }
+}
+
+fn field(s: &str) -> Tokens {
+    if let Some(t) = rename_keyword("pub", s) {
+        t
     } else {
         let mut snake = String::new();
         let mut chars = s.chars();
@@ -65,11 +137,6 @@ fn merge(result: &mut Schema, r: &Schema) {
     }
 }
 
-struct Expander<'r> {
-    root_name: Option<&'r str>,
-    root: &'r Schema,
-}
-
 struct FieldExpander<'a, 'r: 'a> {
     default: bool,
     expander: &'a mut Expander<'r>,
@@ -84,7 +151,7 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
                 let key = field(field_name);
                 let required = schema.required.iter().any(|req| req == field_name);
                 let typ = Ident(self.expander.expand_type(type_name, required, value));
-                if typ.0 == "serde_json::Value" {
+                if !typ.0.starts_with("Option<") {
                     self.default = false;
                 }
                 quote!( #key : #typ )
@@ -93,7 +160,21 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
     }
 }
 
+struct Expander<'r> {
+    root_name: Option<&'r str>,
+    root: &'r Schema,
+    needs_one_or_many: bool,
+}
+
 impl<'r> Expander<'r> {
+    fn new(root_name: Option<&'r str>, root: &'r Schema) -> Expander<'r> {
+        Expander {
+            root_name: root_name,
+            root: root,
+            needs_one_or_many: false,
+        }
+    }
+
     fn type_ref(&self, s: &str) -> String {
         if s == "#" {
             self.root_name.expect("Root name").into()
@@ -152,6 +233,19 @@ impl<'r> Expander<'r> {
     fn expand_type_(&mut self, typ: &Schema) -> String {
         if let Some(ref ref_) = typ.ref_ {
             self.type_ref(ref_)
+        } else if typ.anyOf.len() == 2 {
+            let simple = self.schema(&typ.anyOf[0]);
+            let array = self.schema(&typ.anyOf[1]);
+            match array.items {
+                Some(ref item_schema) => {
+                    if array.type_[0] == Type::Array && simple == self.schema(item_schema) {
+                        self.needs_one_or_many = true;
+                        return format!("OneOrMany<{}>", self.expand_type_(&typ.anyOf[0]));
+                    }
+                }
+                _ => (),
+            }
+            return "serde_json::Value".into();
         } else if typ.type_.len() == 1 {
             match typ.type_[0] {
                 Type::String => {
@@ -214,7 +308,12 @@ impl<'r> Expander<'r> {
                 }
             }
         } else if !schema.enum_.is_empty() {
-            let variants = schema.enum_.iter().map(Ident);
+            let variants = schema.enum_.iter().map(|v| {
+                rename_keyword("", v).unwrap_or_else(|| {
+                    let v = Ident(v);
+                    quote!(#v)
+                })
+            });
             quote! {
                 #[derive(Deserialize, Serialize)]
                 pub enum #name {
@@ -235,9 +334,16 @@ impl<'r> Expander<'r> {
             types.push(self.expand_schema(name, schema));
         }
 
-        quote! { #(
-            #types
-            )*
+        let one_or_many = Ident(if self.needs_one_or_many {
+            ONE_OR_MANY
+        } else {
+            ""
+        });
+
+        quote! {
+            #one_or_many
+            
+            #( #types )*
         }
     }
 }
@@ -247,15 +353,13 @@ pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> 
     use std::io::Write;
 
     let schema = serde_json::from_str(s).unwrap();
-    let mut expander = Expander {
-        root_name: root_name,
-        root: &schema,
-    };
+    let mut expander = Expander::new(root_name, &schema);
     let output = expander.expand(&schema).to_string();
     let mut child =
         try!(Command::new("rustfmt").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
     try!(child.stdin.as_mut().expect("stdin").write_all(output.as_bytes()));
     let output = try!(child.wait_with_output());
+    assert!(output.status.success());
     Ok(try!(String::from_utf8(output.stdout)))
 }
 
@@ -274,10 +378,12 @@ mod tests {
 
         let s = generate(Some("Schema"), s).unwrap().to_string();
 
+        verify_compile("schema", &s);
+
         assert!(s.contains("pub struct Schema"), "{}", s);
         assert!(s.contains("pub type positiveInteger = i64"));
+        assert!(s.contains("pub type_: Option<OneOrMany<simpleTypes>>"));
 
-        verify_compile("schema.rs", &s);
         let result = Command::new("rustc")
             .args(&["-L",
                     "target/debug/deps/",
@@ -298,12 +404,13 @@ mod tests {
     fn verify_compile(name: &str, s: &str) {
 
         let mut filename = PathBuf::from("target/debug");
-        filename.push(name);
+        filename.push(&format!("{}.rs", name));
         {
             let mut file = File::create(&filename).unwrap();
             let header = r#"
             #![feature(proc_macro)]
             
+            extern crate serde;
             #[macro_use]
             extern crate serde_derive;
             extern crate serde_json;
@@ -311,13 +418,13 @@ mod tests {
             file.write_all(header.as_bytes()).unwrap();
             file.write_all(s.as_bytes()).unwrap();
         }
-
+        println!("{}", filename.display());
         let child = Command::new("rustc")
             .args(&["-L",
                     "target/debug/deps/",
                     "--crate-type=rlib",
                     "-o",
-                    "target/debug/deps/libschema.rlib",
+                    &format!("target/debug/deps/lib{}.rlib", name),
                     filename.to_str().unwrap()])
             .stderr(Stdio::piped())
             .spawn()
@@ -335,6 +442,6 @@ mod tests {
 
         let s = generate(None, s).unwrap().to_string();
 
-        verify_compile("debug-server.rs", &s)
+        verify_compile("debug-server", &s)
     }
 }

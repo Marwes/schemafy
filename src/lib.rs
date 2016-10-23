@@ -4,7 +4,6 @@ extern crate serde_json;
 #[macro_use]
 extern crate quote;
 
-use std::borrow::Cow;
 use std::error::Error;
 
 use json_schema::{Schema, Type};
@@ -19,12 +18,37 @@ impl<S: AsRef<str>> ToTokens for Ident<S> {
     }
 }
 
-fn field(s: &str) -> Ident<Cow<str>> {
-    Ident(if ["type", "struct", "enum"].iter().any(|&keyword| keyword == s) {
-        format!("{}_", s).into()
+fn field(s: &str) -> Tokens {
+    if ["type", "struct", "enum"].iter().any(|&keyword| keyword == s) {
+        let n = Ident(format!("{}_", s));
+        quote!( #n )
     } else {
-        s.into()
-    })
+        let mut snake = String::new();
+        let mut chars = s.chars();
+        let mut prev_was_upper = false;
+        while let Some(c) = chars.next() {
+            if c.is_uppercase() {
+                if !prev_was_upper {
+                    snake.push('_');
+                }
+                snake.extend(c.to_lowercase());
+                prev_was_upper = true;
+            } else {
+                snake.push(c);
+                prev_was_upper = false;
+            }
+        }
+        if snake != s {
+            let field = Ident(snake);
+            quote!{
+                #[serde(rename = #s)]
+                pub #field
+            }
+        } else {
+            let field = Ident(s);
+            quote!( pub #field )
+        }
+    }
 }
 
 fn merge(result: &mut Schema, r: &Schema) {
@@ -119,7 +143,7 @@ impl<'r> Expander<'r> {
                 .map(|(key, value)| {
                     let key = field(key);
                     let typ = Ident(self.expand_type(value));
-                    quote!( pub #key : #typ )
+                    quote!( #key : #typ )
                 })
                 .collect()
         }
@@ -176,7 +200,6 @@ mod tests {
 
         let mut filename = PathBuf::from("target/debug");
         filename.push("test.rs");
-        println!("{}", filename.display());
         {
             let mut file = File::create(&filename).unwrap();
             let header = r#"

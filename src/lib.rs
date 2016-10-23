@@ -236,6 +236,21 @@ mod tests {
         assert!(s.contains("pub type positiveInteger = i64"));
 
         verify_compile("schema.rs", &s);
+        let result = Command::new("rustc")
+            .args(&["-L",
+                    "target/debug/deps/",
+                    "-o",
+                    "target/debug/schema-test",
+                    "tests/support/schema-test.rs"])
+            .status()
+            .unwrap();
+
+        assert!(result.success());
+        let result = Command::new("./target/debug/schema-test")
+            .status()
+            .unwrap();
+
+        assert!(result.success());
     }
 
     fn verify_compile(name: &str, s: &str) {
@@ -256,7 +271,12 @@ mod tests {
         }
 
         let child = Command::new("rustc")
-            .args(&["-L", "target/debug/deps/", "--crate-type=rlib", filename.to_str().unwrap()])
+            .args(&["-L",
+                    "target/debug/deps/",
+                    "--crate-type=rlib",
+                    "-o",
+                    "target/debug/deps/libschema.rlib",
+                    filename.to_str().unwrap()])
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();

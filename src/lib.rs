@@ -258,14 +258,17 @@ impl<'r> Expander<'r> {
                 Type::Integer => "i64".into(),
                 Type::Boolean => "bool".into(),
                 Type::Number => "f64".into(),
-                Type::Object => "serde_json::Value".into(),
+                Type::Object if typ.additionalProperties.is_some() => {
+                    let prop = typ.additionalProperties.as_ref().unwrap();
+                    format!("::std::collections::HashMap<String, {}>", self.expand_type_(prop))
+                }
                 Type::Array => {
                     let item_type =
                         typ.items.as_ref().map_or("serde_json::Value".into(),
                                                   |item_schema| self.expand_type_(item_schema));
                     format!("Vec<{}>", item_type)
                 }
-                _ => panic!("Type"),
+                _ => "serde_json::Value".into(),
             }
         } else {
             "serde_json::Value".into()

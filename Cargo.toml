@@ -1,9 +1,16 @@
 [package]
-name = "debugserver-types"
+name = "json-schema"
 version = "0.1.0"
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
+build = "build.rs"
+
+[workspace]
 
 [dependencies]
-json-schema = { path = "../json-schema" }
 quote = "0.3"
-serde_json = "*"
+serde = "0.8"
+serde_json = "0.8"
+serde_derive = "0.8"
+
+[build-dependencies]
+json-schema_snapshot = { path = "json-schema_snapshot" }

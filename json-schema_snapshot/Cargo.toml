@@ -1,0 +1,10 @@
+[package]
+name = "json-schema_snapshot"
+version = "0.1.0"
+authors = ["Markus Westerlind <marwes91@gmail.com>"]
+
+[dependencies]
+quote = "0.3"
+serde = "*"
+serde_derive = "*"
+serde_json = "*"

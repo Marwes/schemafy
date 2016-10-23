@@ -86,7 +86,11 @@ impl<'r> Expander<'r> {
                 Type::Boolean => "bool".into(),
                 Type::Number => "f64".into(),
                 Type::Object => "obj".into(),
-                Type::Array => "array".into(),
+                Type::Array => {
+                    let item_schema =
+                        typ.items.as_ref().expect("Array type must have items schema");
+                    format!("Vec<{}>", self.expand_type(item_schema))
+                }
                 _ => panic!("Type"),
             }
         } else {

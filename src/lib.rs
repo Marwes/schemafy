@@ -5,6 +5,7 @@ extern crate serde_json;
 extern crate quote;
 
 use std::borrow::Cow;
+use std::error::Error;
 
 use json_schema::{Schema, Type};
 
@@ -143,10 +144,18 @@ impl<'r> Expander<'r> {
     }
 }
 
-pub fn generate(s: &str) -> Tokens {
+pub fn generate(s: &str) -> Result<String, Box<Error>> {
+    use std::process::{Command, Stdio};
+    use std::io::Write;
+
     let schema = serde_json::from_str(s).unwrap();
     let mut expander = Expander { root: &schema };
-    expander.expand_schema(&schema)
+    let output = expander.expand_schema(&schema).to_string();
+    let mut child =
+        try!(Command::new("rustfmt").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
+    try!(child.stdin.as_mut().expect("stdin").write_all(output.as_bytes()));
+    let output = try!(child.wait_with_output());
+    Ok(try!(String::from_utf8(output.stdout)))
 }
 
 #[cfg(test)]
@@ -158,8 +167,8 @@ mod tests {
     fn attempt() {
         let s = include_str!("../../json-schema/tests/debugserver-schema.json");
 
-        let s = generate(s).to_string();
-        println!("`{}`", s);
+        let s = generate(s).unwrap().to_string();
+        println!("{}", s);
         assert!(false);
     }
 }

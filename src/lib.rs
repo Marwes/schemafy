@@ -119,7 +119,7 @@ impl<'r> Expander<'r> {
                 .map(|(key, value)| {
                     let key = field(key);
                     let typ = Ident(self.expand_type(value));
-                    quote!( #key : #typ )
+                    quote!( pub #key : #typ )
                 })
                 .collect()
         }
@@ -161,7 +161,6 @@ pub fn generate(s: &str) -> Result<String, Box<Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::Expander;
 
     #[test]
     fn attempt() {

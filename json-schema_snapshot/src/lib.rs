@@ -138,7 +138,7 @@ fn field(s: &str) -> Tokens {
 }
 
 fn merge(result: &mut Schema, r: &Schema) {
-    use std::collections::hash_map::Entry;
+    use std::collections::btree_map::Entry;
 
     for (k, v) in &r.properties {
         match result.properties.entry(k.clone()) {

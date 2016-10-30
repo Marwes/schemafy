@@ -8,10 +8,14 @@ extern crate serde_json;
 #[macro_use]
 extern crate quote;
 
+extern crate inflector;
+
 pub mod schema;
 
 use std::borrow::Cow;
 use std::error::Error;
+
+use inflector::Inflector;
 
 use serde_json::Value;
 
@@ -104,21 +108,7 @@ fn field(s: &str) -> Tokens {
     if let Some(t) = rename_keyword("pub", s) {
         t
     } else {
-        let mut snake = String::new();
-        let mut chars = s.chars();
-        let mut prev_was_upper = false;
-        while let Some(c) = chars.next() {
-            if c.is_uppercase() {
-                if !prev_was_upper {
-                    snake.push('_');
-                }
-                snake.extend(c.to_lowercase());
-                prev_was_upper = true;
-            } else {
-                snake.push(c);
-                prev_was_upper = false;
-            }
-        }
+        let snake = s.to_snake_case();
         if snake != s || snake.contains(|c: char| c == '$' || c == '#') {
             let field = if snake == "$ref" {
                 Ident("ref_".into())
@@ -212,9 +202,9 @@ impl<'r> Expander<'r> {
 
     fn type_ref(&self, s: &str) -> String {
         if s == "#" {
-            self.root_name.expect("Root name").into()
+            self.root_name.expect("Root name").to_pascal_case()
         } else {
-            s.split('/').last().expect("Component").into()
+            s.split('/').last().expect("Component").to_pascal_case()
         }
     }
 
@@ -321,18 +311,18 @@ impl<'r> Expander<'r> {
         types
     }
 
-    pub fn expand_schema(&mut self, name: &str, schema: &Schema) -> Tokens {
+    pub fn expand_schema(&mut self, original_name: &str, schema: &Schema) -> Tokens {
         let (fields, default) = {
             let mut field_expander = FieldExpander {
                 default: true,
                 expander: self,
             };
-            let fields = field_expander.expand_fields(name, schema);
+            let fields = field_expander.expand_fields(original_name, schema);
             (fields, field_expander.default)
         };
-
-        let name = Ident(name);
-        if !fields.is_empty() {
+        let pascal_case_name = original_name.to_pascal_case();
+        let name = Ident(pascal_case_name);
+        let type_decl = if !fields.is_empty() {
             if default {
                 quote! {
                     #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
@@ -352,10 +342,20 @@ impl<'r> Expander<'r> {
             let variants = schema.enum_.as_ref().map_or(&[][..], |v| v).iter().map(|v| {
                 match *v {
                     Value::String(ref v) => {
-                        rename_keyword("", v).unwrap_or_else(|| {
-                            let v = Ident(v);
-                            quote!(#v)
-                        })
+                        let pascal_case_variant = v.to_pascal_case();
+                        let variant_name = rename_keyword("", &pascal_case_variant)
+                            .unwrap_or_else(|| {
+                                let v = Ident(&pascal_case_variant);
+                                quote!(#v)
+                            });
+                        if pascal_case_variant == *v {
+                            variant_name
+                        } else {
+                            quote! {
+                                #[serde(rename = #v)]
+                                #variant_name
+                            }
+                        }
                     }
                     _ => panic!("Expected string"),
                 }
@@ -368,8 +368,16 @@ impl<'r> Expander<'r> {
             }
         } else {
             let typ = Ident(self.expand_type("", true, schema).typ);
-            quote! {
+            return quote! {
                 pub type #name = #typ;
+            };
+        };
+        if original_name == name.0 {
+            type_decl
+        } else {
+            quote! {
+                #[serde(rename = #original_name)]
+                #type_decl
             }
         }
     }
@@ -423,12 +431,14 @@ mod tests {
         let s = include_str!("schema.json");
 
         let s = generate(Some("Schema"), s).unwrap().to_string();
+        let s = s.replace("\r\n", "\n");
 
         verify_compile("schema", &s);
 
         assert!(s.contains("pub struct Schema"), "{}", s);
-        assert!(s.contains("pub type positiveInteger = i64"));
-        assert!(s.contains("pub type_: OneOrMany<simpleTypes>"));
+        assert!(s.contains("pub type PositiveInteger = i64"));
+        assert!(s.contains("pub type_: OneOrMany<SimpleTypes>"));
+        assert!(s.contains("pub enum SimpleTypes {\n    # [ serde ( rename = \"array\" ) ]"));
 
         let result = Command::new("rustc")
             .args(&["-L",

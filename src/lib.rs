@@ -295,7 +295,7 @@ impl<'r> Expander<'r> {
                     let prop = serde_json::from_value(typ.additional_properties.clone().unwrap())
                         .unwrap();
                     let result =
-                        format!("::std::collections::HashMap<String, {}>", self.expand_type_(&prop).typ);
+                        format!("::std::collections::BTreeMap<String, {}>", self.expand_type_(&prop).typ);
                     FieldType {
                         typ: result,
                         default: typ.default == Some(Value::Object(Default::default())),

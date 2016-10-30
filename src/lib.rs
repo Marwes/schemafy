@@ -282,7 +282,7 @@ impl<'r> Expander<'r> {
         } else if typ.type_.len() == 1 {
             match typ.type_[0] {
                 simpleTypes::string => {
-                    if !typ.enum_.as_ref().map_or(false, |e| e.is_empty()) {
+                    if typ.enum_.as_ref().map_or(false, |e| e.is_empty()) {
                         "serde_json::Value".into()
                     } else {
                         "String".into()

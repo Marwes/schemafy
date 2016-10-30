@@ -15,7 +15,7 @@ use std::error::Error;
 
 use serde_json::Value;
 
-use schema::{Schema, Type};
+use schema::{Schema, simpleTypes};
 
 use quote::{Tokens, ToTokens};
 
@@ -162,7 +162,8 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
             .iter()
             .map(|(field_name, value)| {
                 let key = field(field_name);
-                let required = schema.required.iter().any(|req| req == field_name);
+                let required =
+                    schema.required.iter().flat_map(|a| a.iter()).any(|req| req == field_name);
                 let field_type = self.expander.expand_type(type_name, required, value);
                 if !field_type.typ.starts_with("Option<") {
                     self.default = false;
@@ -218,13 +219,13 @@ impl<'r> Expander<'r> {
     }
 
     fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {
-        let result = match schema.allOf.first() {
+        let result = match schema.all_of.as_ref().and_then(|array| array.first()) {
             Some(result) => {
-                schema.allOf
+                schema.all_of
                     .iter()
                     .skip(1)
                     .fold(Cow::Borrowed(result), |mut result, def| {
-                        merge(result.to_mut(), &self.schema(def));
+                        merge(result.to_mut(), &self.schema(&def[0]));
                         result
                     })
             }
@@ -264,48 +265,46 @@ impl<'r> Expander<'r> {
     fn expand_type_(&mut self, typ: &Schema) -> FieldType {
         if let Some(ref ref_) = typ.ref_ {
             self.type_ref(ref_).into()
-        } else if typ.anyOf.len() == 2 {
-            let simple = self.schema(&typ.anyOf[0]);
-            let array = self.schema(&typ.anyOf[1]);
-            match array.items {
-                Some(ref item_schema) => {
-                    if array.type_[0] == Type::Array && simple == self.schema(item_schema) {
-                        self.needs_one_or_many = true;
-                        return FieldType {
-                            typ: format!("OneOrMany<{}>", self.expand_type_(&typ.anyOf[0]).typ),
-                            default: true,
-                        };
-                    }
+        } else if typ.any_of.as_ref().map_or(false, |a| a.len() == 2) {
+            let any_of = typ.any_of.as_ref().unwrap();
+            let simple = self.schema(&any_of[0]);
+            let array = self.schema(&any_of[1]);
+            if let simpleTypes::array = array.type_[0] {
+                if simple == self.schema(&array.items[0]) {
+                    self.needs_one_or_many = true;
+                    return FieldType {
+                        typ: format!("OneOrMany<{}>", self.expand_type_(&any_of[0]).typ),
+                        default: true,
+                    };
                 }
-                _ => (),
             }
             return "serde_json::Value".into();
         } else if typ.type_.len() == 1 {
             match typ.type_[0] {
-                Type::String => {
-                    if !typ.enum_.is_empty() {
+                simpleTypes::string => {
+                    if typ.enum_.as_ref().map_or(false, |e| e.is_empty()) {
                         "serde_json::Value".into()
                     } else {
                         "String".into()
                     }
                 }
-                Type::Integer => "i64".into(),
-                Type::Boolean => "bool".into(),
-                Type::Number => "f64".into(),
-                Type::Object if typ.additionalProperties.is_some() => {
-                    let prop = typ.additionalProperties.as_ref().unwrap();
+                simpleTypes::integer => "i64".into(),
+                simpleTypes::boolean => "bool".into(),
+                simpleTypes::number => "f64".into(),
+                simpleTypes::object if typ.additional_properties.is_some() => {
+                    let prop = serde_json::from_value(typ.additional_properties.clone().unwrap())
+                        .unwrap();
                     let result =
-                        format!("::std::collections::HashMap<String, {}>", self.expand_type_(prop).typ);
+                        format!("::std::collections::BTreeMap<String, {}>", self.expand_type_(&prop).typ);
                     FieldType {
                         typ: result,
                         default: typ.default == Some(Value::Object(Default::default())),
                     }
                 }
-                Type::Array => {
-                    let item_type =
-                        typ.items.as_ref().map_or("serde_json::Value".into(),
-                                                  |item_schema| self.expand_type_(item_schema));
-                    format!("Vec<{}>", item_type.typ).into()
+                simpleTypes::array => {
+                    let item_type = typ.items.get(0).map_or("serde_json::Value".into(),
+                                                            |item| self.expand_type_(item).typ);
+                    format!("Vec<{}>", item_type).into()
                 }
                 _ => "serde_json::Value".into(),
             }
@@ -349,12 +348,17 @@ impl<'r> Expander<'r> {
                     }
                 }
             }
-        } else if !schema.enum_.is_empty() {
-            let variants = schema.enum_.iter().map(|v| {
-                rename_keyword("", v).unwrap_or_else(|| {
-                    let v = Ident(v);
-                    quote!(#v)
-                })
+        } else if schema.enum_.as_ref().map_or(false, |e| !e.is_empty()) {
+            let variants = schema.enum_.as_ref().map_or(&[][..], |v| v).iter().map(|v| {
+                match *v {
+                    Value::String(ref v) => {
+                        rename_keyword("", v).unwrap_or_else(|| {
+                            let v = Ident(v);
+                            quote!(#v)
+                        })
+                    }
+                    _ => panic!("Expected string"),
+                }
             });
             quote! {
                 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
@@ -406,6 +410,10 @@ pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> 
 }
 
 #[cfg(test)]
+#[macro_use(assert_diff)]
+extern crate difference;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -416,7 +424,7 @@ mod tests {
 
     #[test]
     fn generate_schema() {
-        let s = include_str!("../tests/debugserver-schema.json");
+        let s = include_str!("schema.json");
 
         let s = generate(Some("Schema"), s).unwrap().to_string();
 
@@ -441,6 +449,21 @@ mod tests {
             .unwrap();
 
         assert!(result.success());
+
+        let old = read_to_string("src/schema.rs");
+        assert_diff!(&old[old.len() - s.len()..],
+                     &s,
+                     " ",
+                     0);
+    }
+
+    fn read_to_string(s: &str) -> String {
+        use std::io::Read;
+
+        let mut file = File::open(s).unwrap();
+        let mut file_contents = String::new();
+        file.read_to_string(&mut file_contents).unwrap();
+        file_contents
     }
 
     fn verify_compile(name: &str, s: &str) {
@@ -480,7 +503,7 @@ mod tests {
 
     #[test]
     fn builds_with_rustc() {
-        let s = include_str!("../../json-schema/tests/debugserver-schema.json");
+        let s = include_str!("../tests/debugserver-schema.json");
 
         let s = generate(None, s).unwrap().to_string();
 

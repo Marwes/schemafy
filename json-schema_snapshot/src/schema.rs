@@ -1,31 +1,12 @@
 
-use std::collections::HashMap;
+    use serde_json;
+    use serde;
+    
 use std::ops::{Deref, DerefMut};
-
-use serde;
-use serde_json::Value;
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum Type {
-    #[serde(rename = "string")]
-    String,
-    #[serde(rename = "integer")]
-    Integer,
-    #[serde(rename = "number")]
-    Number,
-    #[serde(rename = "null")]
-    Null,
-    #[serde(rename = "object")]
-    Object,
-    #[serde(rename = "array")]
-    Array,
-    #[serde(rename = "boolean")]
-    Boolean,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum OneOrMany<T> {
-    One(T),
+    One(Box<T>),
     Many(Vec<T>),
 }
 
@@ -33,7 +14,7 @@ impl<T> Deref for OneOrMany<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
         match *self {
-            OneOrMany::One(ref v) => unsafe { ::std::slice::from_raw_parts(v, 1) },
+            OneOrMany::One(ref v) => unsafe { ::std::slice::from_raw_parts(&**v, 1) },
             OneOrMany::Many(ref v) => v,
         }
     }
@@ -42,7 +23,7 @@ impl<T> Deref for OneOrMany<T> {
 impl<T> DerefMut for OneOrMany<T> {
     fn deref_mut(&mut self) -> &mut [T] {
         match *self {
-            OneOrMany::One(ref mut v) => unsafe { ::std::slice::from_raw_parts_mut(v, 1) },
+            OneOrMany::One(ref mut v) => unsafe { ::std::slice::from_raw_parts_mut(&mut **v, 1) },
             OneOrMany::Many(ref mut v) => v,
         }
     }
@@ -61,7 +42,7 @@ impl<T> serde::Deserialize for OneOrMany<T>
         where D: serde::Deserializer
     {
         T::deserialize(deserializer)
-            .map(OneOrMany::One)
+            .map(|one| OneOrMany::One(Box::new(one)))
             .or_else(|_| Vec::<T>::deserialize(deserializer).map(OneOrMany::Many))
     }
 }
@@ -78,109 +59,78 @@ impl<T> serde::Serialize for OneOrMany<T>
         }
     }
 }
-
-#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+pub type positiveIntegerDefault0 = serde_json::Value;
+# [ derive ( Clone , PartialEq , Debug , Deserialize , Serialize ) ]
+pub enum simpleTypes {
+    array,
+    boolean,
+    integer,
+    null,
+    number,
+    object,
+    string,
+}
+pub type positiveInteger = i64;
+pub type stringArray = Vec<String>;
+pub type schemaArray = Vec<Schema>;
+# [ derive ( Clone , PartialEq , Debug , Deserialize , Serialize ) ]
 pub struct Schema {
-    pub id: Option<String>,
-
-    #[serde(rename = "$ref")]
-    pub ref_: Option<String>,
-
-    #[serde(rename = "$schema")]
-    pub schema: Option<String>,
-
-    pub title: Option<String>,
-
+    # [ serde ( rename = "exclusiveMaximum" ) ]
+    pub exclusive_maximum: Option<bool>,
+    # [ serde ( rename = "allOf" ) ]
+    pub all_of: Option<schemaArray>,
     pub description: Option<String>,
-
-    pub default: Option<Value>,
-
-    pub multipleOf: Option<f64>,
-
+    # [ serde ( rename = "$ref" ) ]
+    pub ref_: Option<String>,
+    # [ serde ( rename = "multipleOf" ) ]
+    pub multiple_of: Option<f64>,
     pub maximum: Option<f64>,
-
-    #[serde(default)]
-    pub exclusiveMaximum: bool,
-
+    pub dependencies: Option<::std::collections::HashMap<String, serde_json::Value>>,
+    # [ serde ( rename = "minLength" ) ]
+    pub min_length: Option<positiveIntegerDefault0>,
+    # [ serde ( rename = "enum" ) ]
+    pub enum_: Option<Vec<serde_json::Value>>,
+    pub required: Option<stringArray>,
+    # [ serde ( default ) ]
+    pub properties: ::std::collections::HashMap<String, Schema>,
+    # [ serde ( rename = "$schema" ) ]
+    pub schema: Option<String>,
+    # [ serde ( default ) ]
+    pub definitions: ::std::collections::HashMap<String, Schema>,
+    pub title: Option<String>,
+    # [ serde ( rename = "maxItems" ) ]
+    pub max_items: Option<positiveInteger>,
+    # [ serde ( rename = "maxLength" ) ]
+    pub max_length: Option<positiveInteger>,
+    # [ serde ( rename = "minItems" ) ]
+    pub min_items: Option<positiveIntegerDefault0>,
     pub minimum: Option<f64>,
-
-    #[serde(default)]
-    pub exclusiveMinimum: bool,
-
-    pub maxLength: Option<u64>,
-
-    #[serde(default)]
-    pub minLength: u64,
-
-    pub pattern: Option<String>,
-
-    #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(default)]
-    pub additionalItems: Option<Value>,
-
-    #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(default)]
-    pub items: Option<Box<Schema>>,
-
-    pub maxItems: Option<u64>,
-
-    #[serde(default)]
-    pub minItems: u64,
-
-    #[serde(default)]
-    pub uniqueItems: bool,
-
-    pub maxProperties: Option<u64>,
-
-    #[serde(default)]
-    pub minProperties: u64,
-
-    #[serde(skip_serializing_if="Vec::is_empty")]
-    #[serde(default)]
-    pub required: Vec<String>,
-
-    #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(default)]
-    pub additionalProperties: Option<Box<Schema>>,
-
-    #[serde(skip_serializing_if="HashMap::is_empty")]
-    #[serde(default)]
-    pub definitions: HashMap<String, Schema>,
-
-    #[serde(skip_serializing_if="HashMap::is_empty")]
-    #[serde(default)]
-    pub properties: HashMap<String, Schema>,
-
-    #[serde(skip_serializing_if="HashMap::is_empty")]
-    #[serde(default)]
-    pub patternProperties: HashMap<String, Schema>,
-
-    #[serde(skip_serializing_if="HashMap::is_empty")]
-    #[serde(default)]
-    pub dependencies: HashMap<String, Value>,
-
-    #[serde(skip_serializing_if="Vec::is_empty")]
-    #[serde(default)]
-    #[serde(rename = "enum")]
-    pub enum_: Vec<String>,
-
-    #[serde(default)]
-    #[serde(rename = "type")]
-    pub type_: OneOrMany<Type>,
-
-    #[serde(skip_serializing_if="Vec::is_empty")]
-    #[serde(default)]
-    pub allOf: Vec<Schema>,
-
-    #[serde(skip_serializing_if="Vec::is_empty")]
-    #[serde(default)]
-    pub anyOf: Vec<Schema>,
-
-    #[serde(skip_serializing_if="Vec::is_empty")]
-    #[serde(default)]
-    pub oneOf: Vec<Schema>,
-
-    #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(default)]
+    # [ serde ( rename = "oneOf" ) ]
+    pub one_of: Option<schemaArray>,
     pub not: Option<Box<Schema>>,
+    # [ serde ( default ) ]
+    # [ serde ( rename = "patternProperties" ) ]
+    pub pattern_properties: ::std::collections::HashMap<String, Schema>,
+    # [ serde ( rename = "anyOf" ) ]
+    pub any_of: Option<schemaArray>,
+    # [ serde ( rename = "uniqueItems" ) ]
+    pub unique_items: Option<bool>,
+    pub default: Option<serde_json::Value>,
+    # [ serde ( rename = "minProperties" ) ]
+    pub min_properties: Option<positiveIntegerDefault0>,
+    # [ serde ( rename = "exclusiveMinimum" ) ]
+    pub exclusive_minimum: Option<bool>,
+    pub id: Option<String>,
+    # [ serde ( rename = "additionalProperties" ) ]
+    pub additional_properties: Option<serde_json::Value>,
+    # [ serde ( rename = "additionalItems" ) ]
+    pub additional_items: Option<serde_json::Value>,
+    # [ serde ( rename = "maxProperties" ) ]
+    pub max_properties: Option<positiveInteger>,
+    pub pattern: Option<String>,
+    # [ serde ( default ) ]
+    pub items: OneOrMany<Schema>,
+    # [ serde ( default ) ]
+    # [ serde ( rename = "type" ) ]
+    pub type_: OneOrMany<simpleTypes>,
 }

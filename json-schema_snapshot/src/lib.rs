@@ -19,7 +19,7 @@ use inflector::Inflector;
 
 use serde_json::Value;
 
-use schema::{OneOrMany, Schema, simpleTypes};
+use schema::{OneOrMany, Schema, SimpleTypes};
 
 use quote::{Tokens, ToTokens};
 
@@ -127,23 +127,29 @@ fn field(s: &str) -> Tokens {
     }
 }
 
-
-pub fn one_or_many_push<T>(this: &mut OneOrMany<T>, value: T) {
-    fn as_mut_vec<T>(this: &mut OneOrMany<T>) -> &mut Vec<T> {
-        use std::mem;
-        if let OneOrMany::Many(ref mut m) = *this {
-            return m;
-        }
-        if let OneOrMany::One(v) = mem::replace(this, OneOrMany::Many(vec![])) {
-            as_mut_vec(this).push(*v);
-        }
-        as_mut_vec(this)
+fn as_mut_vec<T>(this: &mut OneOrMany<T>) -> &mut Vec<T> {
+    use std::mem;
+    if let OneOrMany::Many(ref mut m) = *this {
+        return m;
     }
-    as_mut_vec(this).push(value)
+    if let OneOrMany::One(v) = mem::replace(this, OneOrMany::Many(vec![])) {
+        as_mut_vec(this).push(*v);
+    }
+    as_mut_vec(this)
 }
 
+fn merge_option<T, F>(mut result: &mut Option<T>, r: &Option<T>, f: F)
+    where F: FnOnce(&mut T, &T),
+          T: Clone
+{
+    *result = match (&mut result, r) {
+        (&mut &mut Some(ref mut result), &Some(ref r)) => return f(result, r),
+        (&mut &mut None, &Some(ref r)) => Some(r.clone()),
+        _ => return (),
+    };
+}
 
-fn merge(result: &mut Schema, r: &Schema) {
+fn merge_all_of(result: &mut Schema, r: &Schema) {
     use std::collections::btree_map::Entry;
 
     for (k, v) in &r.properties {
@@ -151,22 +157,23 @@ fn merge(result: &mut Schema, r: &Schema) {
             Entry::Vacant(entry) => {
                 entry.insert(v.clone());
             }
-            Entry::Occupied(mut entry) => merge(entry.get_mut(), v),
+            Entry::Occupied(mut entry) => merge_all_of(entry.get_mut(), v),
         }
     }
+
+    if let Some(ref ref_) = r.ref_ {
+        result.ref_ = Some(ref_.clone());
+    }
+
     if let Some(ref description) = r.description {
         result.description = Some(description.clone());
     }
-    let r_required = r.required.iter().flat_map(|s| s).cloned();
-    match result.required {
-        Some(ref mut required) => required.extend(r_required),
-        None => result.required = Some(r_required.collect()),
-    }
-    for e in &r.type_[..] {
-        if !result.type_.contains(e) {
-            one_or_many_push(&mut result.type_, e.clone());
-        }
-    }
+
+    merge_option(&mut result.required, &r.required, |required, r_required| {
+        required.extend(r_required.iter().cloned());
+    });
+
+    as_mut_vec(&mut result.type_).retain(|e| r.type_.contains(e));
 }
 
 const LINE_LENGTH: usize = 100;
@@ -292,7 +299,7 @@ impl<'r> Expander<'r> {
                 all_of.iter()
                     .skip(1)
                     .fold(self.schema(&all_of[0]).clone(), |mut result, def| {
-                        merge(result.to_mut(), &self.schema(def));
+                        merge_all_of(result.to_mut(), &self.schema(def));
                         result
                     })
             }
@@ -332,7 +339,7 @@ impl<'r> Expander<'r> {
             let any_of = typ.any_of.as_ref().unwrap();
             let simple = self.schema(&any_of[0]);
             let array = self.schema(&any_of[1]);
-            if let simpleTypes::array = array.type_[0] {
+            if let SimpleTypes::Array = array.type_[0] {
                 if simple == self.schema(&array.items[0]) {
                     self.needs_one_or_many = true;
                     return FieldType {
@@ -344,17 +351,17 @@ impl<'r> Expander<'r> {
             return "serde_json::Value".into();
         } else if typ.type_.len() == 1 {
             match typ.type_[0] {
-                simpleTypes::string => {
+                SimpleTypes::String => {
                     if typ.enum_.as_ref().map_or(false, |e| e.is_empty()) {
                         "serde_json::Value".into()
                     } else {
                         "String".into()
                     }
                 }
-                simpleTypes::integer => "i64".into(),
-                simpleTypes::boolean => "bool".into(),
-                simpleTypes::number => "f64".into(),
-                simpleTypes::object if typ.additional_properties.is_some() => {
+                SimpleTypes::Integer => "i64".into(),
+                SimpleTypes::Boolean => "bool".into(),
+                SimpleTypes::Number => "f64".into(),
+                SimpleTypes::Object if typ.additional_properties.is_some() => {
                     let prop = serde_json::from_value(typ.additional_properties.clone().unwrap())
                         .unwrap();
                     let result =
@@ -364,7 +371,7 @@ impl<'r> Expander<'r> {
                         default: typ.default == Some(Value::Object(Default::default())),
                     }
                 }
-                simpleTypes::array => {
+                SimpleTypes::Array => {
                     let item_type = typ.items.get(0).map_or("serde_json::Value".into(),
                                                             |item| self.expand_type_(item).typ);
                     format!("Vec<{}>", item_type).into()

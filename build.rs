@@ -18,6 +18,7 @@ fn main() {
     file.write_all(br#"
     use serde_json;
     use serde;
-    "#);
+    "#)
+        .unwrap();
     file.write_all(output.as_bytes()).unwrap();
 }

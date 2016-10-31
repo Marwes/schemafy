@@ -291,7 +291,7 @@ impl<'r> Expander<'r> {
             Some(ref all_of) if !all_of.is_empty() => {
                 all_of.iter()
                     .skip(1)
-                    .fold(Cow::Borrowed(&all_of[0]), |mut result, def| {
+                    .fold(self.schema(&all_of[0]).clone(), |mut result, def| {
                         merge(result.to_mut(), &self.schema(def));
                         result
                     })

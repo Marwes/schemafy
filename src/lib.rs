@@ -138,6 +138,16 @@ fn as_mut_vec<T>(this: &mut OneOrMany<T>) -> &mut Vec<T> {
     as_mut_vec(this)
 }
 
+fn merge_option<T, F>(mut result: &mut Option<T>, r: &Option<T>, f: F)
+    where F: FnOnce(&mut T, &T),
+          T: Clone
+{
+    *result = match (&mut result, r) {
+        (&mut &mut Some(ref mut result), &Some(ref r)) => return f(result, r),
+        (&mut &mut None, &Some(ref r)) => Some(r.clone()),
+        _ => return (),
+    };
+}
 
 fn merge_all_of(result: &mut Schema, r: &Schema) {
     use std::collections::btree_map::Entry;
@@ -150,14 +160,18 @@ fn merge_all_of(result: &mut Schema, r: &Schema) {
             Entry::Occupied(mut entry) => merge_all_of(entry.get_mut(), v),
         }
     }
+
+    if let Some(ref ref_) = r.ref_ {
+        result.ref_ = Some(ref_.clone());
+    }
+
     if let Some(ref description) = r.description {
         result.description = Some(description.clone());
     }
-    let r_required = r.required.iter().flat_map(|s| s).cloned();
-    match result.required {
-        Some(ref mut required) => required.extend(r_required),
-        None => result.required = Some(r_required.collect()),
-    }
+
+    merge_option(&mut result.required, &r.required, |required, r_required| {
+        required.extend(r_required.iter().cloned());
+    });
 
     as_mut_vec(&mut result.type_).retain(|e| r.type_.contains(e));
 }

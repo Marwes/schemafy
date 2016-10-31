@@ -188,6 +188,9 @@ struct FieldExpander<'a, 'r: 'a> {
 impl<'a, 'r> FieldExpander<'a, 'r> {
     fn expand_fields(&mut self, type_name: &str, schema: &Schema) -> Vec<Tokens> {
         let schema = self.expander.schema(schema);
+        if type_name == "SourceRequest" {
+            println!("{}:\n{:#?}\n", type_name, &*schema);
+        }
         schema.properties
             .iter()
             .map(|(field_name, value)| {
@@ -254,22 +257,21 @@ impl<'r> Expander<'r> {
     }
 
     fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {
-        let result = match schema.all_of.as_ref().and_then(|array| array.first()) {
-            Some(result) => {
-                schema.all_of
-                    .iter()
+        let schema = match schema.ref_ {
+            Some(ref ref_) => self.schema_ref(ref_),
+            None => schema,
+        };
+        match schema.all_of {
+            Some(ref all_of) if !all_of.is_empty() => {
+                all_of.iter()
                     .skip(1)
-                    .fold(Cow::Borrowed(result), |mut result, def| {
-                        merge(result.to_mut(), &self.schema(&def[0]));
+                    .fold(Cow::Borrowed(&all_of[0]), |mut result, def| {
+                        merge(result.to_mut(), &self.schema(def));
                         result
                     })
             }
-            None => Cow::Borrowed(schema),
-        };
-        if let Some(ref ref_) = result.ref_ {
-            return Cow::Borrowed(self.schema_ref(ref_));
+            _ => Cow::Borrowed(schema),
         }
-        result
     }
 
     fn schema_ref(&self, s: &str) -> &'r Schema {
@@ -530,7 +532,7 @@ mod tests {
             file.write_all(header.as_bytes()).unwrap();
             file.write_all(s.as_bytes()).unwrap();
         }
-        println!("{}", filename.display());
+
         let child = Command::new("rustc")
             .args(&["-L",
                     "target/debug/deps/",
@@ -549,11 +551,13 @@ mod tests {
     }
 
     #[test]
-    fn builds_with_rustc() {
+    fn debugserver_types() {
         let s = include_str!("../tests/debugserver-schema.json");
 
         let s = generate(None, s).unwrap().to_string();
 
-        verify_compile("debug-server", &s)
+        verify_compile("debug-server", &s);
+
+        assert!(s.contains("pub arguments: Option<SourceArguments>,"));
     }
 }

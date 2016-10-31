@@ -19,7 +19,7 @@ use inflector::Inflector;
 
 use serde_json::Value;
 
-use schema::{Schema, simpleTypes};
+use schema::{OneOrMany, Schema, simpleTypes};
 
 use quote::{Tokens, ToTokens};
 
@@ -127,6 +127,22 @@ fn field(s: &str) -> Tokens {
     }
 }
 
+
+pub fn one_or_many_push<T>(this: &mut OneOrMany<T>, value: T) {
+    fn as_mut_vec<T>(this: &mut OneOrMany<T>) -> &mut Vec<T> {
+        use std::mem;
+        if let OneOrMany::Many(ref mut m) = *this {
+            return m;
+        }
+        if let OneOrMany::One(v) = mem::replace(this, OneOrMany::Many(vec![])) {
+            as_mut_vec(this).push(*v);
+        }
+        as_mut_vec(this)
+    }
+    as_mut_vec(this).push(value)
+}
+
+
 fn merge(result: &mut Schema, r: &Schema) {
     use std::collections::btree_map::Entry;
 
@@ -136,6 +152,19 @@ fn merge(result: &mut Schema, r: &Schema) {
                 entry.insert(v.clone());
             }
             Entry::Occupied(mut entry) => merge(entry.get_mut(), v),
+        }
+    }
+    if let Some(ref description) = r.description {
+        result.description = Some(description.clone());
+    }
+    let r_required = r.required.iter().flat_map(|s| s).cloned();
+    match result.required {
+        Some(ref mut required) => required.extend(r_required),
+        None => result.required = Some(r_required.collect()),
+    }
+    for e in &r.type_[..] {
+        if !result.type_.contains(e) {
+            one_or_many_push(&mut result.type_, e.clone());
         }
     }
 }
@@ -188,9 +217,6 @@ struct FieldExpander<'a, 'r: 'a> {
 impl<'a, 'r> FieldExpander<'a, 'r> {
     fn expand_fields(&mut self, type_name: &str, schema: &Schema) -> Vec<Tokens> {
         let schema = self.expander.schema(schema);
-        if type_name == "SourceRequest" {
-            println!("{}:\n{:#?}\n", type_name, &*schema);
-        }
         schema.properties
             .iter()
             .map(|(field_name, value)| {
@@ -558,6 +584,6 @@ mod tests {
 
         verify_compile("debug-server", &s);
 
-        assert!(s.contains("pub arguments: Option<SourceArguments>,"));
+        assert!(s.contains("pub arguments: SourceArguments,"));
     }
 }

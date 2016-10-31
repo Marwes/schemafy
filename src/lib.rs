@@ -19,7 +19,7 @@ use inflector::Inflector;
 
 use serde_json::Value;
 
-use schema::{OneOrMany, Schema, simpleTypes};
+use schema::{OneOrMany, Schema, SimpleTypes};
 
 use quote::{Tokens, ToTokens};
 
@@ -332,7 +332,7 @@ impl<'r> Expander<'r> {
             let any_of = typ.any_of.as_ref().unwrap();
             let simple = self.schema(&any_of[0]);
             let array = self.schema(&any_of[1]);
-            if let simpleTypes::array = array.type_[0] {
+            if let SimpleTypes::Array = array.type_[0] {
                 if simple == self.schema(&array.items[0]) {
                     self.needs_one_or_many = true;
                     return FieldType {
@@ -344,17 +344,17 @@ impl<'r> Expander<'r> {
             return "serde_json::Value".into();
         } else if typ.type_.len() == 1 {
             match typ.type_[0] {
-                simpleTypes::string => {
+                SimpleTypes::String => {
                     if typ.enum_.as_ref().map_or(false, |e| e.is_empty()) {
                         "serde_json::Value".into()
                     } else {
                         "String".into()
                     }
                 }
-                simpleTypes::integer => "i64".into(),
-                simpleTypes::boolean => "bool".into(),
-                simpleTypes::number => "f64".into(),
-                simpleTypes::object if typ.additional_properties.is_some() => {
+                SimpleTypes::Integer => "i64".into(),
+                SimpleTypes::Boolean => "bool".into(),
+                SimpleTypes::Number => "f64".into(),
+                SimpleTypes::Object if typ.additional_properties.is_some() => {
                     let prop = serde_json::from_value(typ.additional_properties.clone().unwrap())
                         .unwrap();
                     let result =
@@ -364,7 +364,7 @@ impl<'r> Expander<'r> {
                         default: typ.default == Some(Value::Object(Default::default())),
                     }
                 }
-                simpleTypes::array => {
+                SimpleTypes::Array => {
                     let item_type = typ.items.get(0).map_or("serde_json::Value".into(),
                                                             |item| self.expand_type_(item).typ);
                     format!("Vec<{}>", item_type).into()

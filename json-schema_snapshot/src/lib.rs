@@ -8,14 +8,18 @@ extern crate serde_json;
 #[macro_use]
 extern crate quote;
 
+extern crate inflector;
+
 pub mod schema;
 
 use std::borrow::Cow;
 use std::error::Error;
 
+use inflector::Inflector;
+
 use serde_json::Value;
 
-use schema::{Schema, simpleTypes};
+use schema::{OneOrMany, Schema, simpleTypes};
 
 use quote::{Tokens, ToTokens};
 
@@ -30,7 +34,7 @@ impl<S: AsRef<str>> ToTokens for Ident<S> {
 const ONE_OR_MANY: &'static str = r#"
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum OneOrMany<T> {
     One(Box<T>),
     Many(Vec<T>),
@@ -104,21 +108,7 @@ fn field(s: &str) -> Tokens {
     if let Some(t) = rename_keyword("pub", s) {
         t
     } else {
-        let mut snake = String::new();
-        let mut chars = s.chars();
-        let mut prev_was_upper = false;
-        while let Some(c) = chars.next() {
-            if c.is_uppercase() {
-                if !prev_was_upper {
-                    snake.push('_');
-                }
-                snake.extend(c.to_lowercase());
-                prev_was_upper = true;
-            } else {
-                snake.push(c);
-                prev_was_upper = false;
-            }
-        }
+        let snake = s.to_snake_case();
         if snake != s || snake.contains(|c: char| c == '$' || c == '#') {
             let field = if snake == "$ref" {
                 Ident("ref_".into())
@@ -137,6 +127,22 @@ fn field(s: &str) -> Tokens {
     }
 }
 
+
+pub fn one_or_many_push<T>(this: &mut OneOrMany<T>, value: T) {
+    fn as_mut_vec<T>(this: &mut OneOrMany<T>) -> &mut Vec<T> {
+        use std::mem;
+        if let OneOrMany::Many(ref mut m) = *this {
+            return m;
+        }
+        if let OneOrMany::One(v) = mem::replace(this, OneOrMany::Many(vec![])) {
+            as_mut_vec(this).push(*v);
+        }
+        as_mut_vec(this)
+    }
+    as_mut_vec(this).push(value)
+}
+
+
 fn merge(result: &mut Schema, r: &Schema) {
     use std::collections::btree_map::Entry;
 
@@ -148,6 +154,59 @@ fn merge(result: &mut Schema, r: &Schema) {
             Entry::Occupied(mut entry) => merge(entry.get_mut(), v),
         }
     }
+    if let Some(ref description) = r.description {
+        result.description = Some(description.clone());
+    }
+    let r_required = r.required.iter().flat_map(|s| s).cloned();
+    match result.required {
+        Some(ref mut required) => required.extend(r_required),
+        None => result.required = Some(r_required.collect()),
+    }
+    for e in &r.type_[..] {
+        if !result.type_.contains(e) {
+            one_or_many_push(&mut result.type_, e.clone());
+        }
+    }
+}
+
+const LINE_LENGTH: usize = 100;
+const INDENT_LENGTH: usize = 4;
+
+fn make_doc_comment(mut comment: &str, remaining_line: usize) -> String {
+    let mut out_comment = String::new();
+    out_comment.push_str("/// ");
+    let mut length = 4;
+    while let Some(word) = comment.split(char::is_whitespace).next() {
+        if comment.is_empty() {
+            break;
+        }
+        comment = &comment[word.len()..];
+        if length + word.len() >= remaining_line {
+            out_comment.push_str("\n/// ");
+            length = 4;
+        }
+        out_comment.push_str(word);
+        length += word.len();
+        let mut n = comment.chars();
+        match n.next() {
+            Some('\n') => {
+                out_comment.push_str("\n");
+                out_comment.push_str("/// ");
+                length = 4;
+            }
+            Some(_) => {
+                out_comment.push_str(" ");
+                length += 1;
+            }
+            None => (),
+        }
+        comment = n.as_str();
+    }
+    if out_comment.ends_with(' ') {
+        out_comment.pop();
+    }
+    out_comment.push_str("\n");
+    out_comment
 }
 
 struct FieldExpander<'a, 'r: 'a> {
@@ -169,11 +228,16 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
                     self.default = false;
                 }
                 let typ = Ident(field_type.typ);
-                if field_type.default {
-                    quote!( #[serde(default)] #key : #typ )
+
+                let default = if field_type.default {
+                    Some(Ident("#[serde(default)]"))
                 } else {
-                    quote!( #key : #typ )
-                }
+                    None
+                };
+                let comment = value.description
+                    .as_ref()
+                    .map(|comment| Ident(make_doc_comment(comment, LINE_LENGTH - INDENT_LENGTH)));
+                quote!( #comment #default #key : #typ )
             })
             .collect()
     }
@@ -212,29 +276,28 @@ impl<'r> Expander<'r> {
 
     fn type_ref(&self, s: &str) -> String {
         if s == "#" {
-            self.root_name.expect("Root name").into()
+            self.root_name.expect("Root name").to_pascal_case()
         } else {
-            s.split('/').last().expect("Component").into()
+            s.split('/').last().expect("Component").to_pascal_case()
         }
     }
 
     fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {
-        let result = match schema.all_of.as_ref().and_then(|array| array.first()) {
-            Some(result) => {
-                schema.all_of
-                    .iter()
+        let schema = match schema.ref_ {
+            Some(ref ref_) => self.schema_ref(ref_),
+            None => schema,
+        };
+        match schema.all_of {
+            Some(ref all_of) if !all_of.is_empty() => {
+                all_of.iter()
                     .skip(1)
-                    .fold(Cow::Borrowed(result), |mut result, def| {
-                        merge(result.to_mut(), &self.schema(&def[0]));
+                    .fold(self.schema(&all_of[0]).clone(), |mut result, def| {
+                        merge(result.to_mut(), &self.schema(def));
                         result
                     })
             }
-            None => Cow::Borrowed(schema),
-        };
-        if let Some(ref ref_) = result.ref_ {
-            return Cow::Borrowed(self.schema_ref(ref_));
+            _ => Cow::Borrowed(schema),
         }
-        result
     }
 
     fn schema_ref(&self, s: &str) -> &'r Schema {
@@ -316,23 +379,33 @@ impl<'r> Expander<'r> {
     pub fn expand_definitions(&mut self, schema: &Schema) -> Vec<Tokens> {
         let mut types = Vec::new();
         for (name, def) in &schema.definitions {
-            types.push(self.expand_schema(name, def));
+            let type_decl = self.expand_schema(name, def);
+            types.push(match def.description {
+                Some(ref comment) => {
+                    let t = Ident(make_doc_comment(comment, LINE_LENGTH));
+                    quote! {
+                        #t
+                        #type_decl
+                    }
+                }
+                None => type_decl,
+            });
         }
         types
     }
 
-    pub fn expand_schema(&mut self, name: &str, schema: &Schema) -> Tokens {
+    pub fn expand_schema(&mut self, original_name: &str, schema: &Schema) -> Tokens {
         let (fields, default) = {
             let mut field_expander = FieldExpander {
                 default: true,
                 expander: self,
             };
-            let fields = field_expander.expand_fields(name, schema);
+            let fields = field_expander.expand_fields(original_name, schema);
             (fields, field_expander.default)
         };
-
-        let name = Ident(name);
-        if !fields.is_empty() {
+        let pascal_case_name = original_name.to_pascal_case();
+        let name = Ident(pascal_case_name);
+        let type_decl = if !fields.is_empty() {
             if default {
                 quote! {
                     #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
@@ -352,10 +425,20 @@ impl<'r> Expander<'r> {
             let variants = schema.enum_.as_ref().map_or(&[][..], |v| v).iter().map(|v| {
                 match *v {
                     Value::String(ref v) => {
-                        rename_keyword("", v).unwrap_or_else(|| {
-                            let v = Ident(v);
-                            quote!(#v)
-                        })
+                        let pascal_case_variant = v.to_pascal_case();
+                        let variant_name = rename_keyword("", &pascal_case_variant)
+                            .unwrap_or_else(|| {
+                                let v = Ident(&pascal_case_variant);
+                                quote!(#v)
+                            });
+                        if pascal_case_variant == *v {
+                            variant_name
+                        } else {
+                            quote! {
+                                #[serde(rename = #v)]
+                                #variant_name
+                            }
+                        }
                     }
                     _ => panic!("Expected string"),
                 }
@@ -368,8 +451,16 @@ impl<'r> Expander<'r> {
             }
         } else {
             let typ = Ident(self.expand_type("", true, schema).typ);
-            quote! {
+            return quote! {
                 pub type #name = #typ;
+            };
+        };
+        if original_name == name.0 {
+            type_decl
+        } else {
+            quote! {
+                #[serde(rename = #original_name)]
+                #type_decl
             }
         }
     }
@@ -404,14 +495,11 @@ pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> 
     let mut child =
         try!(Command::new("rustfmt").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
     try!(child.stdin.as_mut().expect("stdin").write_all(output.as_bytes()));
+    ::std::fs::File::create("test.rs").unwrap().write_all(output.as_bytes()).unwrap();
     let output = try!(child.wait_with_output());
     assert!(output.status.success());
     Ok(try!(String::from_utf8(output.stdout)))
 }
-
-#[cfg(test)]
-#[macro_use(assert_diff)]
-extern crate difference;
 
 #[cfg(test)]
 mod tests {
@@ -427,12 +515,14 @@ mod tests {
         let s = include_str!("schema.json");
 
         let s = generate(Some("Schema"), s).unwrap().to_string();
+        let s = s.replace("\r\n", "\n");
 
         verify_compile("schema", &s);
 
         assert!(s.contains("pub struct Schema"), "{}", s);
-        assert!(s.contains("pub type positiveInteger = i64"));
-        assert!(s.contains("pub type_: OneOrMany<simpleTypes>"));
+        assert!(s.contains("pub type PositiveInteger = i64"));
+        assert!(s.contains("pub type_: OneOrMany<SimpleTypes>"));
+        assert!(s.contains("pub enum SimpleTypes {\n    # [ serde ( rename = \"array\" ) ]"));
 
         let result = Command::new("rustc")
             .args(&["-L",
@@ -449,21 +539,6 @@ mod tests {
             .unwrap();
 
         assert!(result.success());
-
-        let old = read_to_string("src/schema.rs");
-        assert_diff!(&old[old.len() - s.len()..],
-                     &s,
-                     " ",
-                     0);
-    }
-
-    fn read_to_string(s: &str) -> String {
-        use std::io::Read;
-
-        let mut file = File::open(s).unwrap();
-        let mut file_contents = String::new();
-        file.read_to_string(&mut file_contents).unwrap();
-        file_contents
     }
 
     fn verify_compile(name: &str, s: &str) {
@@ -483,7 +558,7 @@ mod tests {
             file.write_all(header.as_bytes()).unwrap();
             file.write_all(s.as_bytes()).unwrap();
         }
-        println!("{}", filename.display());
+
         let child = Command::new("rustc")
             .args(&["-L",
                     "target/debug/deps/",
@@ -502,11 +577,13 @@ mod tests {
     }
 
     #[test]
-    fn builds_with_rustc() {
+    fn debugserver_types() {
         let s = include_str!("../tests/debugserver-schema.json");
 
         let s = generate(None, s).unwrap().to_string();
 
-        verify_compile("debug-server", &s)
+        verify_compile("debug-server", &s);
+
+        assert!(s.contains("pub arguments: SourceArguments,"));
     }
 }

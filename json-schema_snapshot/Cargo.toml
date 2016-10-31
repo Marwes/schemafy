@@ -8,3 +8,5 @@ quote = "0.3"
 serde = "*"
 serde_derive = "*"
 serde_json = "*"
+
+Inflector = "0.6.0"

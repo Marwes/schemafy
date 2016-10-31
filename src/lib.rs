@@ -127,23 +127,19 @@ fn field(s: &str) -> Tokens {
     }
 }
 
-
-pub fn one_or_many_push<T>(this: &mut OneOrMany<T>, value: T) {
-    fn as_mut_vec<T>(this: &mut OneOrMany<T>) -> &mut Vec<T> {
-        use std::mem;
-        if let OneOrMany::Many(ref mut m) = *this {
-            return m;
-        }
-        if let OneOrMany::One(v) = mem::replace(this, OneOrMany::Many(vec![])) {
-            as_mut_vec(this).push(*v);
-        }
-        as_mut_vec(this)
+fn as_mut_vec<T>(this: &mut OneOrMany<T>) -> &mut Vec<T> {
+    use std::mem;
+    if let OneOrMany::Many(ref mut m) = *this {
+        return m;
     }
-    as_mut_vec(this).push(value)
+    if let OneOrMany::One(v) = mem::replace(this, OneOrMany::Many(vec![])) {
+        as_mut_vec(this).push(*v);
+    }
+    as_mut_vec(this)
 }
 
 
-fn merge(result: &mut Schema, r: &Schema) {
+fn merge_all_of(result: &mut Schema, r: &Schema) {
     use std::collections::btree_map::Entry;
 
     for (k, v) in &r.properties {
@@ -151,7 +147,7 @@ fn merge(result: &mut Schema, r: &Schema) {
             Entry::Vacant(entry) => {
                 entry.insert(v.clone());
             }
-            Entry::Occupied(mut entry) => merge(entry.get_mut(), v),
+            Entry::Occupied(mut entry) => merge_all_of(entry.get_mut(), v),
         }
     }
     if let Some(ref description) = r.description {
@@ -162,11 +158,8 @@ fn merge(result: &mut Schema, r: &Schema) {
         Some(ref mut required) => required.extend(r_required),
         None => result.required = Some(r_required.collect()),
     }
-    for e in &r.type_[..] {
-        if !result.type_.contains(e) {
-            one_or_many_push(&mut result.type_, e.clone());
-        }
-    }
+
+    as_mut_vec(&mut result.type_).retain(|e| r.type_.contains(e));
 }
 
 const LINE_LENGTH: usize = 100;
@@ -292,7 +285,7 @@ impl<'r> Expander<'r> {
                 all_of.iter()
                     .skip(1)
                     .fold(self.schema(&all_of[0]).clone(), |mut result, def| {
-                        merge(result.to_mut(), &self.schema(def));
+                        merge_all_of(result.to_mut(), &self.schema(def));
                         result
                     })
             }

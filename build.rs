@@ -5,7 +5,9 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 fn main() {
-    let src = Path::new("src/schema.json");
+    let schema = "src/schema.json";
+    println!("cargo:rerun-if-changed={}", schema);
+    let src = Path::new(schema);
 
     let mut file = File::open(src).unwrap();
     let mut input = String::new();

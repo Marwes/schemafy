@@ -140,6 +140,46 @@ fn merge(result: &mut Schema, r: &Schema) {
     }
 }
 
+const LINE_LENGTH: usize = 100;
+const INDENT_LENGTH: usize = 4;
+
+fn make_doc_comment(mut comment: &str, remaining_line: usize) -> String {
+    let mut out_comment = String::new();
+    out_comment.push_str("/// ");
+    let mut length = 4;
+    while let Some(word) = comment.split(char::is_whitespace).next() {
+        if comment.is_empty() {
+            break;
+        }
+        comment = &comment[word.len()..];
+        if length + word.len() >= remaining_line {
+            out_comment.push_str("\n/// ");
+            length = 4;
+        }
+        out_comment.push_str(word);
+        length += word.len();
+        let mut n = comment.chars();
+        match n.next() {
+            Some('\n') => {
+                out_comment.push_str("\n");
+                out_comment.push_str("/// ");
+                length = 4;
+            }
+            Some(_) => {
+                out_comment.push_str(" ");
+                length += 1;
+            }
+            None => (),
+        }
+        comment = n.as_str();
+    }
+    if out_comment.ends_with(' ') {
+        out_comment.pop();
+    }
+    out_comment.push_str("\n");
+    out_comment
+}
+
 struct FieldExpander<'a, 'r: 'a> {
     default: bool,
     expander: &'a mut Expander<'r>,
@@ -159,11 +199,16 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
                     self.default = false;
                 }
                 let typ = Ident(field_type.typ);
-                if field_type.default {
-                    quote!( #[serde(default)] #key : #typ )
+
+                let default = if field_type.default {
+                    Some(Ident("#[serde(default)]"))
                 } else {
-                    quote!( #key : #typ )
-                }
+                    None
+                };
+                let comment = value.description
+                    .as_ref()
+                    .map(|comment| Ident(make_doc_comment(comment, LINE_LENGTH - INDENT_LENGTH)));
+                quote!( #comment #default #key : #typ )
             })
             .collect()
     }
@@ -306,7 +351,17 @@ impl<'r> Expander<'r> {
     pub fn expand_definitions(&mut self, schema: &Schema) -> Vec<Tokens> {
         let mut types = Vec::new();
         for (name, def) in &schema.definitions {
-            types.push(self.expand_schema(name, def));
+            let type_decl = self.expand_schema(name, def);
+            types.push(match def.description {
+                Some(ref comment) => {
+                    let t = Ident(make_doc_comment(comment, LINE_LENGTH));
+                    quote! {
+                        #t
+                        #type_decl
+                    }
+                }
+                None => type_decl,
+            });
         }
         types
     }
@@ -412,6 +467,7 @@ pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> 
     let mut child =
         try!(Command::new("rustfmt").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
     try!(child.stdin.as_mut().expect("stdin").write_all(output.as_bytes()));
+    ::std::fs::File::create("test.rs").unwrap().write_all(output.as_bytes()).unwrap();
     let output = try!(child.wait_with_output());
     assert!(output.status.success());
     Ok(try!(String::from_utf8(output.stdout)))

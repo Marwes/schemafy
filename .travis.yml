@@ -3,3 +3,6 @@ cache: cargo
 sudo: false
 rust:
 - nightly
+env:
+  global:
+  - RUST_BACKTRACE=1

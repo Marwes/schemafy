@@ -3,6 +3,10 @@ cache: cargo
 sudo: false
 rust:
 - nightly
+before_script:
+- cargo install rustfmt
+script:
+- cargo test
 env:
   global:
   - RUST_BACKTRACE=1

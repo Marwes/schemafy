@@ -3,6 +3,12 @@ name = "schemafy_snapshot"
 version = "0.1.0"
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 
+description = "Snapshot for bootstrapping the schemafy crate"
+license = "MIT"
+
+repository = "https://github.com/Marwes/schemafy"
+documentation = "https://docs.rs/schemafy"
+
 [dependencies]
 quote = "0.3"
 serde = "*"

@@ -502,7 +502,7 @@ pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> 
     let mut child =
         try!(Command::new("rustfmt").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
     try!(child.stdin.as_mut().expect("stdin").write_all(output.as_bytes()));
-    ::std::fs::File::create("test.rs").unwrap().write_all(output.as_bytes()).unwrap();
+
     let output = try!(child.wait_with_output());
     assert!(output.status.success());
     Ok(try!(String::from_utf8(output.stdout)))

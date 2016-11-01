@@ -7,7 +7,6 @@ extern crate serde_json;
 
 #[macro_use]
 extern crate quote;
-
 extern crate inflector;
 
 pub mod schema;
@@ -492,19 +491,30 @@ impl<'r> Expander<'r> {
     }
 }
 
-pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
-    use std::process::{Command, Stdio};
-    use std::io::Write;
+#[cfg(not(feature = "rustfmt"))]
+fn format(s: String) -> Result<String, Box<Error>> {
+    Ok(s)
+}
 
-    let schema = serde_json::from_str(s).unwrap();
-    let mut expander = Expander::new(root_name, &schema);
-    let output = expander.expand(&schema).to_string();
+#[cfg(feature = "rustfmt")]
+fn format(output: String) -> Result<String, Box<Error>> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
     let mut child =
         try!(Command::new("rustfmt").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
     try!(child.stdin.as_mut().expect("stdin").write_all(output.as_bytes()));
     let output = try!(child.wait_with_output());
     assert!(output.status.success());
     Ok(try!(String::from_utf8(output.stdout)))
+}
+
+pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
+    let schema = serde_json::from_str(s).unwrap();
+    let mut expander = Expander::new(root_name, &schema);
+    let output = expander.expand(&schema).to_string();
+
+    Ok(try!(format(output)))
 }
 
 #[cfg(test)]

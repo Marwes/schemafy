@@ -16,3 +16,7 @@ Inflector = "0.6.0"
 
 [build-dependencies]
 json-schema_snapshot = { path = "json-schema_snapshot" }
+
+[features]
+default = ["rustfmt"]
+rustfmt = []

@@ -1,8 +1,14 @@
 [package]
-name = "json-schema"
+name = "schemafy"
 version = "0.1.0"
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 build = "build.rs"
+
+description = "Generates serializeable Rust types from a json schema"
+license = "MIT"
+
+repository = "https://github.com/Marwes/json-schema"
+documentation = "https://docs.rs/json-schema"
 
 [workspace]
 
@@ -15,7 +21,7 @@ serde_derive = "0.8"
 Inflector = "0.6.0"
 
 [build-dependencies]
-json-schema_snapshot = { path = "json-schema_snapshot" }
+schemafy_snapshot = { path = "schemafy_snapshot" }
 
 [features]
 default = ["rustfmt"]

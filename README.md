@@ -1,4 +1,4 @@
-# json-schema
+# schemafy
 
 This is a Rust crate which can take a [json schema](http://json-schema.org/) and generate Rust types which are serializable with [serde](https://serde.rs/). No checking such as `min_value` are done but instead only the structure of the schema is followed as closely as possible.
 

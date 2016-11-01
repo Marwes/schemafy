@@ -4,7 +4,7 @@ sudo: false
 rust:
 - nightly
 before_script:
-- cargo install rustfmt
+- type rustfmt || cargo install rustfmt
 script:
 - cargo test
 env:

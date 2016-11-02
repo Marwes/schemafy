@@ -4,6 +4,7 @@ sudo: false
 rust:
 - nightly
 before_script:
+- export PATH=$HOME/.cargo/bin:$PATH
 - type rustfmt || cargo install rustfmt
 script:
 - cargo test

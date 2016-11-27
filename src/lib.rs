@@ -226,6 +226,7 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
         schema.properties
             .iter()
             .map(|(field_name, value)| {
+                self.expander.current_field.clone_from(field_name);
                 let key = field(field_name);
                 let required =
                     schema.required.iter().flat_map(|a| a.iter()).any(|req| req == field_name);
@@ -252,6 +253,9 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
 struct Expander<'r> {
     root_name: Option<&'r str>,
     root: &'r Schema,
+    current_type: String,
+    current_field: String,
+    extra_types: Vec<Tokens>,
     needs_one_or_many: bool,
 }
 
@@ -276,6 +280,9 @@ impl<'r> Expander<'r> {
         Expander {
             root_name: root_name,
             root: root,
+            current_field: "".into(),
+            current_type: "".into(),
+            extra_types: Vec::new(),
             needs_one_or_many: false,
         }
     }
@@ -370,6 +377,15 @@ impl<'r> Expander<'r> {
                         default: typ.default == Some(Value::Object(Default::default())),
                     }
                 }
+                // Handle objects defined inline
+                SimpleTypes::Object if !typ.properties.is_empty() => {
+                    let name = format!("{}{}",
+                        self.current_type.to_pascal_case(),
+                        self.current_field.to_pascal_case());
+                    let tokens = self.expand_schema(&name, typ);
+                    self.extra_types.push(tokens);
+                    name.into()
+                }
                 SimpleTypes::Array => {
                     let item_type = typ.items.get(0).map_or("serde_json::Value".into(),
                                                             |item| self.expand_type_(item).typ);
@@ -401,6 +417,8 @@ impl<'r> Expander<'r> {
     }
 
     pub fn expand_schema(&mut self, original_name: &str, schema: &Schema) -> Tokens {
+        let pascal_case_name = original_name.to_pascal_case();
+        self.current_type.clone_from(&pascal_case_name);
         let (fields, default) = {
             let mut field_expander = FieldExpander {
                 default: true,
@@ -409,7 +427,6 @@ impl<'r> Expander<'r> {
             let fields = field_expander.expand_fields(original_name, schema);
             (fields, field_expander.default)
         };
-        let pascal_case_name = original_name.to_pascal_case();
         let name = Ident(pascal_case_name);
         let type_decl = if !fields.is_empty() {
             if default {
@@ -476,6 +493,8 @@ impl<'r> Expander<'r> {
         if let Some(name) = self.root_name {
             types.push(self.expand_schema(name, schema));
         }
+
+        types.extend(self.extra_types.drain(..));
 
         let one_or_many = Ident(if self.needs_one_or_many {
             ONE_OR_MANY

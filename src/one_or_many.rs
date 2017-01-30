@@ -39,9 +39,57 @@ impl<T> serde::Deserialize for OneOrMany<T>
     fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
         where D: serde::Deserializer
     {
-        T::deserialize(deserializer)
-            .map(|one| OneOrMany::One(Box::new(one)))
-            .or_else(|_| Vec::<T>::deserialize(deserializer).map(OneOrMany::Many))
+        use std::marker::PhantomData;
+        use std::fmt;
+
+        use serde::de::{self, Deserialize, Deserializer};
+        use serde::de::value::{MapVisitorDeserializer, ValueDeserializer, SeqVisitorDeserializer};
+
+        struct OneOrManyDeserializer<T>(PhantomData<T>);
+        impl<T> serde::de::Visitor for OneOrManyDeserializer<T>
+            where T: Deserialize
+        {
+            type Value = OneOrMany<T>;
+
+            fn visit_i64<E>(&mut self, value: i64) -> Result<OneOrMany<T>, E>
+                where E: de::Error
+            {
+                Deserialize::deserialize(&mut value.into_deserializer()).map(OneOrMany::One)
+            }
+
+            fn visit_u64<E>(&mut self, value: u64) -> Result<OneOrMany<T>, E>
+                where E: de::Error
+            {
+                Deserialize::deserialize(&mut value.into_deserializer()).map(OneOrMany::One)
+            }
+
+            fn visit_str<E>(&mut self, value: &str) -> Result<OneOrMany<T>, E>
+                where E: de::Error
+            {
+                Deserialize::deserialize(&mut value.into_deserializer()).map(OneOrMany::One)
+            }
+
+            fn visit_string<E>(&mut self, value: String) -> Result<OneOrMany<T>, E>
+                where E: de::Error
+            {
+                Deserialize::deserialize(&mut value.into_deserializer()).map(OneOrMany::One)
+            }
+
+            fn visit_map<V>(&mut self, visitor: V) -> Result<Self::Value, V::Error>
+                where V: serde::de::MapVisitor
+            {
+                Deserialize::deserialize(&mut MapVisitorDeserializer::new(visitor))
+                    .map(OneOrMany::One)
+            }
+
+            fn visit_seq<V>(&mut self, visitor: V) -> Result<Self::Value, V::Error>
+                where V: serde::de::SeqVisitor
+            {
+                Deserialize::deserialize(&mut SeqVisitorDeserializer::new(visitor))
+                    .map(OneOrMany::Many)
+            }
+        }
+        deserializer.deserialize(OneOrManyDeserializer(PhantomData::<T>))
     }
 }
 

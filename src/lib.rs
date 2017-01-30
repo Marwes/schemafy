@@ -7,6 +7,7 @@ extern crate serde_json;
 extern crate quote;
 extern crate inflector;
 
+pub mod one_or_many;
 pub mod schema;
 
 use std::borrow::Cow;
@@ -29,63 +30,7 @@ impl<S: AsRef<str>> ToTokens for Ident<S> {
 }
 
 const ONE_OR_MANY: &'static str = r#"
-use std::ops::{Deref, DerefMut};
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum OneOrMany<T> {
-    One(Box<T>),
-    Many(Vec<T>),
-}
-
-impl<T> Deref for OneOrMany<T> {
-    type Target = [T];
-    fn deref(&self) -> &[T] {
-        match *self {
-            OneOrMany::One(ref v) => unsafe { ::std::slice::from_raw_parts(&**v, 1) },
-            OneOrMany::Many(ref v) => v,
-        }
-    }
-}
-
-impl<T> DerefMut for OneOrMany<T> {
-    fn deref_mut(&mut self) -> &mut [T] {
-        match *self {
-            OneOrMany::One(ref mut v) => unsafe { ::std::slice::from_raw_parts_mut(&mut **v, 1) },
-            OneOrMany::Many(ref mut v) => v,
-        }
-    }
-}
-
-impl<T> Default for OneOrMany<T> {
-    fn default() -> OneOrMany<T> {
-        OneOrMany::Many(Vec::new())
-    }
-}
-
-impl<T> serde::Deserialize for OneOrMany<T>
-    where T: serde::Deserialize
-{
-    fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
-        where D: serde::Deserializer
-    {
-        T::deserialize(deserializer)
-            .map(|one| OneOrMany::One(Box::new(one)))
-            .or_else(|_| Vec::<T>::deserialize(deserializer).map(OneOrMany::Many))
-    }
-}
-
-impl<T> serde::Serialize for OneOrMany<T>
-    where T: serde::Serialize
-{
-    fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
-        where S: serde::Serializer
-    {
-        match *self {
-            OneOrMany::One(ref one) => one.serialize(serializer),
-            OneOrMany::Many(ref many) => many.serialize(serializer),
-        }
-    }
-}
+use schemafy::one_or_many::*;
 "#;
 
 fn rename_keyword(prefix: &str, s: &str) -> Option<Tokens> {
@@ -584,6 +529,7 @@ mod tests {
             #[macro_use]
             extern crate serde_derive;
             extern crate serde_json;
+            extern crate schemafy;
             "#;
             file.write_all(header.as_bytes()).unwrap();
             file.write_all(s.as_bytes()).unwrap();

@@ -7,6 +7,7 @@ extern crate serde_json;
 extern crate quote;
 extern crate inflector;
 
+pub mod one_or_many;
 pub mod schema;
 
 use std::borrow::Cow;
@@ -27,66 +28,6 @@ impl<S: AsRef<str>> ToTokens for Ident<S> {
         tokens.append(self.0.as_ref())
     }
 }
-
-const ONE_OR_MANY: &'static str = r#"
-use std::ops::{Deref, DerefMut};
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum OneOrMany<T> {
-    One(Box<T>),
-    Many(Vec<T>),
-}
-
-impl<T> Deref for OneOrMany<T> {
-    type Target = [T];
-    fn deref(&self) -> &[T] {
-        match *self {
-            OneOrMany::One(ref v) => unsafe { ::std::slice::from_raw_parts(&**v, 1) },
-            OneOrMany::Many(ref v) => v,
-        }
-    }
-}
-
-impl<T> DerefMut for OneOrMany<T> {
-    fn deref_mut(&mut self) -> &mut [T] {
-        match *self {
-            OneOrMany::One(ref mut v) => unsafe { ::std::slice::from_raw_parts_mut(&mut **v, 1) },
-            OneOrMany::Many(ref mut v) => v,
-        }
-    }
-}
-
-impl<T> Default for OneOrMany<T> {
-    fn default() -> OneOrMany<T> {
-        OneOrMany::Many(Vec::new())
-    }
-}
-
-impl<T> serde::Deserialize for OneOrMany<T>
-    where T: serde::Deserialize
-{
-    fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
-        where D: serde::Deserializer
-    {
-        T::deserialize(deserializer)
-            .map(|one| OneOrMany::One(Box::new(one)))
-            .or_else(|_| Vec::<T>::deserialize(deserializer).map(OneOrMany::Many))
-    }
-}
-
-impl<T> serde::Serialize for OneOrMany<T>
-    where T: serde::Serialize
-{
-    fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
-        where S: serde::Serializer
-    {
-        match *self {
-            OneOrMany::One(ref one) => one.serialize(serializer),
-            OneOrMany::Many(ref many) => many.serialize(serializer),
-        }
-    }
-}
-"#;
 
 fn rename_keyword(prefix: &str, s: &str) -> Option<Tokens> {
     if ["type", "struct", "enum"].iter().any(|&keyword| keyword == s) {
@@ -254,7 +195,6 @@ struct Expander<'r> {
     current_type: String,
     current_field: String,
     extra_types: Vec<Tokens>,
-    needs_one_or_many: bool,
 }
 
 struct FieldType {
@@ -281,7 +221,6 @@ impl<'r> Expander<'r> {
             current_field: "".into(),
             current_type: "".into(),
             extra_types: Vec::new(),
-            needs_one_or_many: false,
         }
     }
 
@@ -346,7 +285,6 @@ impl<'r> Expander<'r> {
             let array = self.schema(&any_of[1]);
             if let SimpleTypes::Array = array.type_[0] {
                 if simple == self.schema(&array.items[0]) {
-                    self.needs_one_or_many = true;
                     return FieldType {
                         typ: format!("OneOrMany<{}>", self.expand_type_(&any_of[0]).typ),
                         default: true,
@@ -493,15 +431,7 @@ impl<'r> Expander<'r> {
 
         types.extend(self.extra_types.drain(..));
 
-        let one_or_many = Ident(if self.needs_one_or_many {
-            ONE_OR_MANY
-        } else {
-            ""
-        });
-
         quote! {
-            #one_or_many
-            
             #( #types )*
         }
     }
@@ -584,6 +514,9 @@ mod tests {
             #[macro_use]
             extern crate serde_derive;
             extern crate serde_json;
+            extern crate schemafy;
+            
+            use schemafy::one_or_many::*;
             "#;
             file.write_all(header.as_bytes()).unwrap();
             file.write_all(s.as_bytes()).unwrap();

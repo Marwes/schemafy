@@ -36,19 +36,69 @@ impl<T> Default for OneOrMany<T> {
 impl<T> serde::Deserialize for OneOrMany<T>
     where T: serde::Deserialize
 {
-    fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where D: serde::Deserializer
     {
-        T::deserialize(deserializer)
-            .map(|one| OneOrMany::One(Box::new(one)))
-            .or_else(|_| Vec::<T>::deserialize(deserializer).map(OneOrMany::Many))
+        use std::marker::PhantomData;
+        use std::fmt;
+
+        use serde::de::{self, Deserialize};
+        use serde::de::value::{MapVisitorDeserializer, ValueDeserializer, SeqVisitorDeserializer};
+
+        struct OneOrManyDeserializer<T>(PhantomData<T>);
+        impl<T> serde::de::Visitor for OneOrManyDeserializer<T>
+            where T: Deserialize
+        {
+            type Value = OneOrMany<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("one or many")
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<OneOrMany<T>, E>
+                where E: de::Error
+            {
+                Deserialize::deserialize(value.into_deserializer()).map(OneOrMany::One)
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<OneOrMany<T>, E>
+                where E: de::Error
+            {
+                Deserialize::deserialize(value.into_deserializer()).map(OneOrMany::One)
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<OneOrMany<T>, E>
+                where E: de::Error
+            {
+                Deserialize::deserialize(value.into_deserializer()).map(OneOrMany::One)
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<OneOrMany<T>, E>
+                where E: de::Error
+            {
+                Deserialize::deserialize(value.into_deserializer()).map(OneOrMany::One)
+            }
+
+            fn visit_map<V>(self, visitor: V) -> Result<Self::Value, V::Error>
+                where V: serde::de::MapVisitor
+            {
+                Deserialize::deserialize(MapVisitorDeserializer::new(visitor)).map(OneOrMany::One)
+            }
+
+            fn visit_seq<V>(self, visitor: V) -> Result<Self::Value, V::Error>
+                where V: serde::de::SeqVisitor
+            {
+                Deserialize::deserialize(SeqVisitorDeserializer::new(visitor)).map(OneOrMany::Many)
+            }
+        }
+        deserializer.deserialize(OneOrManyDeserializer(PhantomData::<T>))
     }
 }
 
 impl<T> serde::Serialize for OneOrMany<T>
     where T: serde::Serialize
 {
-    fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: serde::Serializer
     {
         match *self {
@@ -65,6 +115,18 @@ mod tests {
 
     use serde_json::from_str;
 
+    #[test]
+    fn deserialize_one_int() {
+        assert_eq!(from_str::<OneOrMany<i32>>("1").unwrap(),
+                   OneOrMany::One(Box::new(1)));
+    }
+
+    #[test]
+    fn deserialize_many_int() {
+        assert_eq!(from_str::<OneOrMany<i32>>("[1, 2, 3]").unwrap(),
+                   OneOrMany::Many(vec![1, 2, 3]));
+    }
+
     #[derive(Deserialize, Debug, PartialEq)]
     struct Test {
         x: i32,
@@ -72,18 +134,29 @@ mod tests {
     }
 
     #[test]
-    fn deserialize() {
-        assert_eq!(from_str::<OneOrMany<i32>>("1").unwrap(),
-                   OneOrMany::One(Box::new(1)));
-        // assert_eq!(from_str::<OneOrMany<i32>>("[1, 2, 3]").unwrap(),
-        //            OneOrMany::Many(vec![1, 2, 3]));
-
+    fn deserialize_one_struct() {
         assert_eq!(from_str::<OneOrMany<Test>>(r#"{ "x" : 10, "y" : "test" }"#).unwrap(),
                    OneOrMany::One(Box::new(Test {
                        x: 10,
                        y: Some("test".to_string()),
                    })));
+    }
+
+    #[test]
+    fn deserialize_one_struct_missing_field() {
         assert_eq!(from_str::<OneOrMany<Test>>(r#"{ "x" : 10 }"#).unwrap(),
                    OneOrMany::One(Box::new(Test { x: 10, y: None })));
+    }
+
+
+    #[test]
+    fn deserialize_many_struct() {
+        assert_eq!(from_str::<OneOrMany<Test>>(r#"[{ "x" : 10 }, { "x" : 0, "y" : "a" }]"#)
+                       .unwrap(),
+                   OneOrMany::Many(vec![Test { x: 10, y: None },
+                                        Test {
+                                            x: 0,
+                                            y: Some("a".to_string()),
+                                        }]));
     }
 }

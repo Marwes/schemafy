@@ -14,9 +14,9 @@ documentation = "https://docs.rs/schemafy"
 
 [dependencies]
 quote = "0.3"
-serde = "0.8"
-serde_json = "0.8"
-serde_derive = "0.8"
+serde = "0.9"
+serde_json = "0.9"
+serde_derive = "0.9"
 
 Inflector = "0.6.0"
 

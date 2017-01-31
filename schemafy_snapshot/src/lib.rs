@@ -5,9 +5,9 @@ extern crate serde_json;
 
 #[macro_use]
 extern crate quote;
-
 extern crate inflector;
 
+pub mod one_or_many;
 pub mod schema;
 
 use std::borrow::Cow;
@@ -28,66 +28,6 @@ impl<S: AsRef<str>> ToTokens for Ident<S> {
         tokens.append(self.0.as_ref())
     }
 }
-
-const ONE_OR_MANY: &'static str = r#"
-use std::ops::{Deref, DerefMut};
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum OneOrMany<T> {
-    One(Box<T>),
-    Many(Vec<T>),
-}
-
-impl<T> Deref for OneOrMany<T> {
-    type Target = [T];
-    fn deref(&self) -> &[T] {
-        match *self {
-            OneOrMany::One(ref v) => unsafe { ::std::slice::from_raw_parts(&**v, 1) },
-            OneOrMany::Many(ref v) => v,
-        }
-    }
-}
-
-impl<T> DerefMut for OneOrMany<T> {
-    fn deref_mut(&mut self) -> &mut [T] {
-        match *self {
-            OneOrMany::One(ref mut v) => unsafe { ::std::slice::from_raw_parts_mut(&mut **v, 1) },
-            OneOrMany::Many(ref mut v) => v,
-        }
-    }
-}
-
-impl<T> Default for OneOrMany<T> {
-    fn default() -> OneOrMany<T> {
-        OneOrMany::Many(Vec::new())
-    }
-}
-
-impl<T> serde::Deserialize for OneOrMany<T>
-    where T: serde::Deserialize
-{
-    fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
-        where D: serde::Deserializer
-    {
-        T::deserialize(deserializer)
-            .map(|one| OneOrMany::One(Box::new(one)))
-            .or_else(|_| Vec::<T>::deserialize(deserializer).map(OneOrMany::Many))
-    }
-}
-
-impl<T> serde::Serialize for OneOrMany<T>
-    where T: serde::Serialize
-{
-    fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
-        where S: serde::Serializer
-    {
-        match *self {
-            OneOrMany::One(ref one) => one.serialize(serializer),
-            OneOrMany::Many(ref many) => many.serialize(serializer),
-        }
-    }
-}
-"#;
 
 fn rename_keyword(prefix: &str, s: &str) -> Option<Tokens> {
     if ["type", "struct", "enum"].iter().any(|&keyword| keyword == s) {
@@ -225,6 +165,7 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
         schema.properties
             .iter()
             .map(|(field_name, value)| {
+                self.expander.current_field.clone_from(field_name);
                 let key = field(field_name);
                 let required =
                     schema.required.iter().flat_map(|a| a.iter()).any(|req| req == field_name);
@@ -251,7 +192,9 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
 struct Expander<'r> {
     root_name: Option<&'r str>,
     root: &'r Schema,
-    needs_one_or_many: bool,
+    current_type: String,
+    current_field: String,
+    extra_types: Vec<Tokens>,
 }
 
 struct FieldType {
@@ -275,7 +218,9 @@ impl<'r> Expander<'r> {
         Expander {
             root_name: root_name,
             root: root,
-            needs_one_or_many: false,
+            current_field: "".into(),
+            current_type: "".into(),
+            extra_types: Vec::new(),
         }
     }
 
@@ -318,6 +263,9 @@ impl<'r> Expander<'r> {
     }
 
     fn expand_type(&mut self, type_name: &str, required: bool, typ: &Schema) -> FieldType {
+        if type_name == "StoppedEvent" {
+            println!("{:#?}", typ);
+        }
         let mut result = self.expand_type_(typ);
         if type_name == result.typ {
             result.typ = format!("Box<{}>", result.typ)
@@ -337,7 +285,6 @@ impl<'r> Expander<'r> {
             let array = self.schema(&any_of[1]);
             if let SimpleTypes::Array = array.type_[0] {
                 if simple == self.schema(&array.items[0]) {
-                    self.needs_one_or_many = true;
                     return FieldType {
                         typ: format!("OneOrMany<{}>", self.expand_type_(&any_of[0]).typ),
                         default: true,
@@ -366,6 +313,15 @@ impl<'r> Expander<'r> {
                         typ: result,
                         default: typ.default == Some(Value::Object(Default::default())),
                     }
+                }
+                // Handle objects defined inline
+                SimpleTypes::Object if !typ.properties.is_empty() => {
+                    let name = format!("{}{}",
+                                       self.current_type.to_pascal_case(),
+                                       self.current_field.to_pascal_case());
+                    let tokens = self.expand_schema(&name, typ);
+                    self.extra_types.push(tokens);
+                    name.into()
                 }
                 SimpleTypes::Array => {
                     let item_type = typ.items.get(0).map_or("serde_json::Value".into(),
@@ -398,6 +354,8 @@ impl<'r> Expander<'r> {
     }
 
     pub fn expand_schema(&mut self, original_name: &str, schema: &Schema) -> Tokens {
+        let pascal_case_name = original_name.to_pascal_case();
+        self.current_type.clone_from(&pascal_case_name);
         let (fields, default) = {
             let mut field_expander = FieldExpander {
                 default: true,
@@ -406,7 +364,6 @@ impl<'r> Expander<'r> {
             let fields = field_expander.expand_fields(original_name, schema);
             (fields, field_expander.default)
         };
-        let pascal_case_name = original_name.to_pascal_case();
         let name = Ident(pascal_case_name);
         let type_decl = if !fields.is_empty() {
             if default {
@@ -472,34 +429,38 @@ impl<'r> Expander<'r> {
             types.push(self.expand_schema(name, schema));
         }
 
-        let one_or_many = Ident(if self.needs_one_or_many {
-            ONE_OR_MANY
-        } else {
-            ""
-        });
+        types.extend(self.extra_types.drain(..));
 
         quote! {
-            #one_or_many
-            
             #( #types )*
         }
     }
 }
 
-pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
-    use std::process::{Command, Stdio};
-    use std::io::Write;
+#[cfg(not(feature = "rustfmt"))]
+fn format(s: String) -> Result<String, Box<Error>> {
+    Ok(s)
+}
 
-    let schema = serde_json::from_str(s).unwrap();
-    let mut expander = Expander::new(root_name, &schema);
-    let output = expander.expand(&schema).to_string();
+#[cfg(feature = "rustfmt")]
+fn format(output: String) -> Result<String, Box<Error>> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
     let mut child =
         try!(Command::new("rustfmt").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
     try!(child.stdin.as_mut().expect("stdin").write_all(output.as_bytes()));
-
     let output = try!(child.wait_with_output());
     assert!(output.status.success());
     Ok(try!(String::from_utf8(output.stdout)))
+}
+
+pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
+    let schema = serde_json::from_str(s).unwrap();
+    let mut expander = Expander::new(root_name, &schema);
+    let output = expander.expand(&schema).to_string();
+
+    Ok(try!(format(output)))
 }
 
 #[cfg(test)]
@@ -553,6 +514,9 @@ mod tests {
             #[macro_use]
             extern crate serde_derive;
             extern crate serde_json;
+            extern crate schemafy;
+            
+            use schemafy::one_or_many::*;
             "#;
             file.write_all(header.as_bytes()).unwrap();
             file.write_all(s.as_bytes()).unwrap();

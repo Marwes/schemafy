@@ -17,7 +17,8 @@ use inflector::Inflector;
 
 use serde_json::Value;
 
-use schema::{OneOrMany, Schema, SimpleTypes};
+use one_or_many::OneOrMany;
+use schema::{Schema, SimpleTypes};
 
 use quote::{Tokens, ToTokens};
 

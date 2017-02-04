@@ -1,4 +1,4 @@
-extern crate json_schema_snapshot;
+extern crate schemafy_snapshot;
 
 use std::fs::File;
 use std::io::{Read, Write};
@@ -13,7 +13,7 @@ fn main() {
     let mut input = String::new();
     file.read_to_string(&mut input).unwrap();
 
-    let output = json_schema_snapshot::generate(Some("Schema"), &input).unwrap();
+    let output = schemafy_snapshot::generate(Some("Schema"), &input).unwrap();
     let dst = Path::new("src/schema.rs");
 
     let mut file = File::create(dst).unwrap();

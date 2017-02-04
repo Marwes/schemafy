@@ -1,4 +1,3 @@
-#![feature(proc_macro)]
 
 extern crate serde;
 #[macro_use]
@@ -168,9 +167,9 @@ fn merge_all_of(result: &mut Schema, r: &Schema) {
         result.description = Some(description.clone());
     }
 
-    merge_option(&mut result.required, &r.required, |required, r_required| {
-        required.extend(r_required.iter().cloned());
-    });
+    merge_option(&mut result.required,
+                 &r.required,
+                 |required, r_required| { required.extend(r_required.iter().cloned()); });
 
     as_mut_vec(&mut result.type_).retain(|e| r.type_.contains(e));
 }
@@ -307,16 +306,14 @@ impl<'r> Expander<'r> {
     }
 
     fn schema_ref(&self, s: &str) -> &'r Schema {
-        s.split('/').fold(self.root, |schema, comp| {
-            if comp == "#" {
-                self.root
-            } else if comp == "definitions" {
-                schema
-            } else {
-                schema.definitions
-                    .get(comp)
-                    .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp))
-            }
+        s.split('/').fold(self.root, |schema, comp| if comp == "#" {
+            self.root
+        } else if comp == "definitions" {
+            schema
+        } else {
+            schema.definitions
+                .get(comp)
+                .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp))
         })
     }
 
@@ -363,8 +360,8 @@ impl<'r> Expander<'r> {
                 SimpleTypes::Object if typ.additional_properties.is_some() => {
                     let prop = serde_json::from_value(typ.additional_properties.clone().unwrap())
                         .unwrap();
-                    let result =
-                        format!("::std::collections::BTreeMap<String, {}>", self.expand_type_(&prop).typ);
+                    let result = format!("::std::collections::BTreeMap<String, {}>",
+                                         self.expand_type_(&prop).typ);
                     FieldType {
                         typ: result,
                         default: typ.default == Some(Value::Object(Default::default())),
@@ -428,26 +425,24 @@ impl<'r> Expander<'r> {
                 }
             }
         } else if schema.enum_.as_ref().map_or(false, |e| !e.is_empty()) {
-            let variants = schema.enum_.as_ref().map_or(&[][..], |v| v).iter().map(|v| {
-                match *v {
-                    Value::String(ref v) => {
-                        let pascal_case_variant = v.to_pascal_case();
-                        let variant_name = rename_keyword("", &pascal_case_variant)
-                            .unwrap_or_else(|| {
-                                let v = Ident(&pascal_case_variant);
-                                quote!(#v)
-                            });
-                        if pascal_case_variant == *v {
-                            variant_name
-                        } else {
-                            quote! {
+            let variants = schema.enum_.as_ref().map_or(&[][..], |v| v).iter().map(|v| match *v {
+                Value::String(ref v) => {
+                    let pascal_case_variant = v.to_pascal_case();
+                    let variant_name = rename_keyword("", &pascal_case_variant)
+                        .unwrap_or_else(|| {
+                            let v = Ident(&pascal_case_variant);
+                            quote!(#v)
+                        });
+                    if pascal_case_variant == *v {
+                        variant_name
+                    } else {
+                        quote! {
                                 #[serde(rename = #v)]
                                 #variant_name
                             }
-                        }
                     }
-                    _ => panic!("Expected string"),
                 }
+                _ => panic!("Expected string"),
             });
             quote! {
                 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
@@ -564,8 +559,6 @@ mod tests {
         {
             let mut file = File::create(&filename).unwrap();
             let header = r#"
-            #![feature(proc_macro)]
-            
             extern crate serde;
             #[macro_use]
             extern crate serde_derive;

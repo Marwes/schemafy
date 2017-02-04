@@ -1,0 +1,16 @@
+[package]
+name = "schemafy_snapshot"
+version = "0.1.1"
+authors = ["Markus Westerlind <marwes91@gmail.com>"]
+
+description = "Snapshot for bootstrapping the schemafy crate"
+
+license = "MIT"
+
+[dependencies]
+quote = "0.3"
+serde = "0.8.0"
+serde_derive = "0.8.0"
+serde_json = "0.8.0"
+
+Inflector = "0.6.0"

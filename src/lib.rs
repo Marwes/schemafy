@@ -302,7 +302,7 @@ impl<'r> Expander<'r> {
             if let SimpleTypes::Array = array.type_[0] {
                 if simple == self.schema(&array.items[0]) {
                     return FieldType {
-                        typ: format!("OneOrMany<{}>", self.expand_type_(&any_of[0]).typ),
+                        typ: format!("Vec<{}>", self.expand_type_(&any_of[0]).typ),
                         attributes: vec![r#"serialize_with="one_or_many::serialize""#.into(),
                                          r#"deserialize_with="one_or_many::deserialize""#.into()],
                         default: true,
@@ -496,7 +496,7 @@ mod tests {
 
         assert!(s.contains("pub struct Schema"), "{}", s);
         assert!(s.contains("pub type PositiveInteger = i64"));
-        assert!(s.contains("pub type_: OneOrMany<SimpleTypes>"));
+        assert!(s.contains("pub type_: Vec<SimpleTypes>"));
         assert!(s.contains("pub enum SimpleTypes {\n    # [ serde ( rename = \"array\" ) ]"));
 
         let result = Command::new("rustc")
@@ -529,7 +529,7 @@ mod tests {
             extern crate serde_json;
             extern crate schemafy;
             
-            use schemafy::one_or_many::{self, OneOrMany};
+            use schemafy::one_or_many;
             "#;
             file.write_all(header.as_bytes()).unwrap();
             file.write_all(s.as_bytes()).unwrap();

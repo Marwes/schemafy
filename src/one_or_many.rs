@@ -33,11 +33,14 @@ impl<T> Default for OneOrMany<T> {
     }
 }
 
-pub fn deserialize<T, D>(deserializer: D) -> Result<OneOrMany<T>, D::Error>
+pub fn deserialize<T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
     where T: serde::Deserialize,
           D: serde::Deserializer
 {
-    serde::Deserialize::deserialize(deserializer)
+    serde::Deserialize::deserialize(deserializer).map(|v| match v {
+        OneOrMany::One(v) => vec![*v],
+        OneOrMany::Many(v) => v,
+    })
 }
 
 impl<T> serde::Deserialize for OneOrMany<T>
@@ -102,11 +105,16 @@ impl<T> serde::Deserialize for OneOrMany<T>
     }
 }
 
-pub fn serialize<T, S>(value: &OneOrMany<T>, serializer: S) -> Result<S::Ok, S::Error>
+pub fn serialize<T, S>(value: &[T], serializer: S) -> Result<S::Ok, S::Error>
     where T: serde::Serialize,
           S: serde::Serializer
 {
-    serde::Serialize::serialize(value, serializer)
+    use serde::Serialize;
+    if value.len() == 1 {
+        value[0].serialize(serializer)
+    } else {
+        value.serialize(serializer)
+    }
 }
 
 impl<T> serde::Serialize for OneOrMany<T>

@@ -22,7 +22,3 @@ Inflector = "0.6.0"
 
 [build-dependencies]
 schemafy_snapshot = { version = "0.2.0", path = "schemafy_snapshot" }
-
-[features]
-default = ["rustfmt"]
-rustfmt = []

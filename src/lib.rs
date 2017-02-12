@@ -438,13 +438,7 @@ impl<'r> Expander<'r> {
     }
 }
 
-#[cfg(not(feature = "rustfmt"))]
-fn format(s: String) -> Result<String, Box<Error>> {
-    Ok(s)
-}
-
-#[cfg(feature = "rustfmt")]
-fn format(output: String) -> Result<String, Box<Error>> {
+fn format(output: &str) -> Result<String, Box<Error>> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
@@ -461,7 +455,7 @@ pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> 
     let mut expander = Expander::new(root_name, &schema);
     let output = expander.expand(&schema).to_string();
 
-    Ok(try!(format(output)))
+    Ok(format(&output).unwrap_or_else(|_| output))
 }
 
 #[cfg(test)]

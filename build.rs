@@ -18,7 +18,7 @@ fn main() {
 
     let mut file = File::create(dst).unwrap();
     file.write_all(br#"
-    use one_or_many::{self, OneOrMany};
+    use one_or_many;
     use serde_json;
     "#)
         .unwrap();

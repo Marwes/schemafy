@@ -19,6 +19,7 @@ serde_json = "0.9"
 serde_derive = "0.9"
 
 Inflector = "0.6.0"
+itertools = "0.5.9"
 
 [build-dependencies]
 schemafy_snapshot = { version = "0.2.0", path = "schemafy_snapshot" }

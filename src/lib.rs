@@ -6,6 +6,7 @@ extern crate serde_json;
 #[macro_use]
 extern crate quote;
 extern crate inflector;
+extern crate itertools;
 
 pub mod one_or_many;
 pub mod schema;
@@ -19,6 +20,8 @@ use serde_json::Value;
 
 use one_or_many::OneOrMany;
 use schema::{Schema, SimpleTypes};
+
+use itertools::Itertools;
 
 use quote::{Tokens, ToTokens};
 
@@ -181,10 +184,20 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
                 } else {
                     None
                 };
+                let attributes = if field_type.attributes.is_empty() {
+                    None
+                } else {
+                    Some(Ident(format!("#[serde({})]", field_type.attributes.iter().format(", "))))
+                };
                 let comment = value.description
                     .as_ref()
                     .map(|comment| Ident(make_doc_comment(comment, LINE_LENGTH - INDENT_LENGTH)));
-                quote!( #comment #default #key : #typ )
+                quote!{
+                    #comment
+                    #default
+                    #attributes
+                    #key : #typ 
+                }
             })
             .collect()
     }
@@ -200,6 +213,7 @@ struct Expander<'r> {
 
 struct FieldType {
     typ: String,
+    attributes: Vec<String>,
     default: bool,
 }
 
@@ -209,6 +223,7 @@ impl<S> From<S> for FieldType
     fn from(s: S) -> FieldType {
         FieldType {
             typ: s.into(),
+            attributes: Vec::new(),
             default: false,
         }
     }
@@ -288,6 +303,8 @@ impl<'r> Expander<'r> {
                 if simple == self.schema(&array.items[0]) {
                     return FieldType {
                         typ: format!("OneOrMany<{}>", self.expand_type_(&any_of[0]).typ),
+                        attributes: vec![r#"serialize_with="one_or_many::serialize""#.into(),
+                                         r#"deserialize_with="one_or_many::deserialize""#.into()],
                         default: true,
                     };
                 }
@@ -312,6 +329,7 @@ impl<'r> Expander<'r> {
                                          self.expand_type_(&prop).typ);
                     FieldType {
                         typ: result,
+                        attributes: Vec::new(),
                         default: typ.default == Some(Value::Object(Default::default())),
                     }
                 }
@@ -511,7 +529,7 @@ mod tests {
             extern crate serde_json;
             extern crate schemafy;
             
-            use schemafy::one_or_many::*;
+            use schemafy::one_or_many::{self, OneOrMany};
             "#;
             file.write_all(header.as_bytes()).unwrap();
             file.write_all(s.as_bytes()).unwrap();

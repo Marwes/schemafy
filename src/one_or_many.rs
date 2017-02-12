@@ -33,6 +33,13 @@ impl<T> Default for OneOrMany<T> {
     }
 }
 
+pub fn deserialize<T, D>(deserializer: D) -> Result<OneOrMany<T>, D::Error>
+    where T: serde::Deserialize,
+          D: serde::Deserializer
+{
+    serde::Deserialize::deserialize(deserializer)
+}
+
 impl<T> serde::Deserialize for OneOrMany<T>
     where T: serde::Deserialize
 {
@@ -93,6 +100,13 @@ impl<T> serde::Deserialize for OneOrMany<T>
         }
         deserializer.deserialize(OneOrManyDeserializer(PhantomData::<T>))
     }
+}
+
+pub fn serialize<T, S>(value: &OneOrMany<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where T: serde::Serialize,
+          S: serde::Serializer
+{
+    serde::Serialize::serialize(value, serializer)
 }
 
 impl<T> serde::Serialize for OneOrMany<T>

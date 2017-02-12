@@ -18,7 +18,6 @@ use inflector::Inflector;
 
 use serde_json::Value;
 
-use one_or_many::OneOrMany;
 use schema::{Schema, SimpleTypes};
 
 use itertools::Itertools;
@@ -69,17 +68,6 @@ fn field(s: &str) -> Tokens {
     }
 }
 
-fn as_mut_vec<T>(this: &mut OneOrMany<T>) -> &mut Vec<T> {
-    use std::mem;
-    if let OneOrMany::Many(ref mut m) = *this {
-        return m;
-    }
-    if let OneOrMany::One(v) = mem::replace(this, OneOrMany::Many(vec![])) {
-        as_mut_vec(this).push(*v);
-    }
-    as_mut_vec(this)
-}
-
 fn merge_option<T, F>(mut result: &mut Option<T>, r: &Option<T>, f: F)
     where F: FnOnce(&mut T, &T),
           T: Clone
@@ -115,7 +103,7 @@ fn merge_all_of(result: &mut Schema, r: &Schema) {
                  &r.required,
                  |required, r_required| { required.extend(r_required.iter().cloned()); });
 
-    as_mut_vec(&mut result.type_).retain(|e| r.type_.contains(e));
+    result.type_.retain(|e| r.type_.contains(e));
 }
 
 const LINE_LENGTH: usize = 100;

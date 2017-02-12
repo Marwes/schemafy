@@ -33,6 +33,16 @@ impl<T> Default for OneOrMany<T> {
     }
 }
 
+pub fn deserialize<T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
+    where T: serde::Deserialize,
+          D: serde::Deserializer
+{
+    serde::Deserialize::deserialize(deserializer).map(|v| match v {
+        OneOrMany::One(v) => vec![*v],
+        OneOrMany::Many(v) => v,
+    })
+}
+
 impl<T> serde::Deserialize for OneOrMany<T>
     where T: serde::Deserialize
 {
@@ -92,6 +102,18 @@ impl<T> serde::Deserialize for OneOrMany<T>
             }
         }
         deserializer.deserialize(OneOrManyDeserializer(PhantomData::<T>))
+    }
+}
+
+pub fn serialize<T, S>(value: &[T], serializer: S) -> Result<S::Ok, S::Error>
+    where T: serde::Serialize,
+          S: serde::Serializer
+{
+    use serde::Serialize;
+    if value.len() == 1 {
+        value[0].serialize(serializer)
+    } else {
+        value.serialize(serializer)
     }
 }
 

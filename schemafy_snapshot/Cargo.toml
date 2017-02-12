@@ -16,3 +16,4 @@ serde_json = "0.9"
 serde_derive = "0.9"
 
 Inflector = "0.6.0"
+itertools = "0.5.9"

@@ -3,6 +3,8 @@ cache: cargo
 sudo: false
 rust:
 - nightly
+- beta
+- stable
 before_script:
 - export PATH=$HOME/.cargo/bin:$PATH
 - type rustfmt || cargo install rustfmt

@@ -196,7 +196,7 @@ struct Expander<'r> {
     root: &'r Schema,
     current_type: String,
     current_field: String,
-    extra_types: Vec<Tokens>,
+    types: Vec<(String, Tokens)>,
 }
 
 struct FieldType {
@@ -224,7 +224,7 @@ impl<'r> Expander<'r> {
             root: root,
             current_field: "".into(),
             current_type: "".into(),
-            extra_types: Vec::new(),
+            types: Vec::new(),
         }
     }
 
@@ -327,7 +327,7 @@ impl<'r> Expander<'r> {
                                        self.current_type.to_pascal_case(),
                                        self.current_field.to_pascal_case());
                     let tokens = self.expand_schema(&name, typ);
-                    self.extra_types.push(tokens);
+                    self.types.push((name.clone(), tokens));
                     name.into()
                 }
                 SimpleTypes::Array => {
@@ -342,11 +342,10 @@ impl<'r> Expander<'r> {
         }
     }
 
-    pub fn expand_definitions(&mut self, schema: &Schema) -> Vec<Tokens> {
-        let mut types = Vec::new();
+    pub fn expand_definitions(&mut self, schema: &Schema) {
         for (name, def) in &schema.definitions {
             let type_decl = self.expand_schema(name, def);
-            types.push(match def.description {
+            let definition_tokens = match def.description {
                 Some(ref comment) => {
                     let t = Ident(make_doc_comment(comment, LINE_LENGTH));
                     quote! {
@@ -355,12 +354,14 @@ impl<'r> Expander<'r> {
                     }
                 }
                 None => type_decl,
-            });
+            };
+            self.types.push((name.to_string(), definition_tokens));
         }
-        types
     }
 
     pub fn expand_schema(&mut self, original_name: &str, schema: &Schema) -> Tokens {
+        self.expand_definitions(schema);
+
         let pascal_case_name = original_name.to_pascal_case();
         self.current_type.clone_from(&pascal_case_name);
         let (fields, default) = {
@@ -431,12 +432,15 @@ impl<'r> Expander<'r> {
     }
 
     pub fn expand(&mut self, schema: &Schema) -> Tokens {
-        let mut types = self.expand_definitions(schema);
-        if let Some(name) = self.root_name {
-            types.push(self.expand_schema(name, schema));
+        match self.root_name {
+            Some(name) => {
+                let schema = self.expand_schema(name, schema);
+                self.types.push((name.to_string(), schema));
+            }
+            None => self.expand_definitions(schema),
         }
 
-        types.extend(self.extra_types.drain(..));
+        let types = self.types.iter().map(|t| &t.1);
 
         quote! {
             #( #types )*
@@ -549,5 +553,16 @@ mod tests {
         verify_compile("debug-server", &s);
 
         assert!(s.contains("pub arguments: SourceArguments,"));
+    }
+
+    #[test]
+    fn nested_definition() {
+        let s = include_str!("../tests/nested.json");
+
+        let s = generate(None, s).unwrap().to_string();
+
+        verify_compile("debug-server", &s);
+
+        assert!(s.contains("pub struct Defnested"));
     }
 }

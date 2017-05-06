@@ -1,6 +1,6 @@
 [package]
 name = "schemafy"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 build = "build.rs"
 
@@ -22,4 +22,4 @@ Inflector = "0.6.0"
 itertools = "0.5.9"
 
 [build-dependencies]
-schemafy_snapshot = { version = "0.2.0", path = "schemafy_snapshot" }
+schemafy_snapshot = { version = "0.3.0", path = "schemafy_snapshot" }

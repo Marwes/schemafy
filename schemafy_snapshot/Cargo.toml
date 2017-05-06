@@ -1,6 +1,6 @@
 [package]
 name = "schemafy_snapshot"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 
 description = "Snapshot for bootstrapping the schemafy crate"

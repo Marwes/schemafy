@@ -2,19 +2,19 @@ use serde;
 
 pub type OneOrMany<T> = Vec<T>;
 
-pub fn deserialize<T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
-    where T: serde::Deserialize,
-          D: serde::Deserializer
+pub fn deserialize<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
+    where T: serde::Deserialize<'de>,
+          D: serde::Deserializer<'de>
 {
     use std::marker::PhantomData;
     use std::fmt;
 
-    use serde::de::{self, Deserialize};
-    use serde::de::value::{MapVisitorDeserializer, ValueDeserializer, SeqVisitorDeserializer};
+    use serde::de::{self, Deserialize, IntoDeserializer};
+    use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 
     struct OneOrManyDeserializer<T>(PhantomData<T>);
-    impl<T> serde::de::Visitor for OneOrManyDeserializer<T>
-        where T: Deserialize
+    impl<'de2, T> serde::de::Visitor<'de2> for OneOrManyDeserializer<T>
+        where T: Deserialize<'de2>
     {
         type Value = Vec<T>;
 
@@ -47,18 +47,18 @@ pub fn deserialize<T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
         }
 
         fn visit_map<V>(self, visitor: V) -> Result<Self::Value, V::Error>
-            where V: serde::de::MapVisitor
+            where V: serde::de::MapAccess<'de2>
         {
-            Deserialize::deserialize(MapVisitorDeserializer::new(visitor)).map(|v| vec![v])
+            Deserialize::deserialize(MapAccessDeserializer::new(visitor)).map(|v| vec![v])
         }
 
         fn visit_seq<V>(self, visitor: V) -> Result<Self::Value, V::Error>
-            where V: serde::de::SeqVisitor
+            where V: serde::de::SeqAccess<'de2>
         {
-            Deserialize::deserialize(SeqVisitorDeserializer::new(visitor))
+            Deserialize::deserialize(SeqAccessDeserializer::new(visitor))
         }
     }
-    deserializer.deserialize(OneOrManyDeserializer(PhantomData::<T>))
+    deserializer.deserialize_any(OneOrManyDeserializer(PhantomData::<T>))
 }
 
 pub fn serialize<T, S>(value: &[T], serializer: S) -> Result<S::Ok, S::Error>
@@ -83,7 +83,7 @@ mod tests {
     #[derive(PartialEq, Debug, Deserialize, Serialize)]
     struct OneOrMany<T>(#[serde(serialize_with="serialize", deserialize_with="deserialize")]
                         Vec<T>)
-        where T: Deserialize + Serialize;
+        where T: for<'de2> Deserialize<'de2> + Serialize;
 
     #[test]
     fn deserialize_one_int() {

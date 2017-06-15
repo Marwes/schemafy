@@ -7,7 +7,7 @@ rust:
 - stable
 before_script:
 - export PATH=$HOME/.cargo/bin:$PATH
-- type rustfmt || cargo install rustfmt
+- type rustfmt || cargo +nightly install rustfmt-nightly
 script:
 - cargo test
 env:

@@ -11,6 +11,8 @@ extern crate itertools;
 pub mod one_or_many;
 pub mod schema;
 
+use self as schemafy;
+
 use std::borrow::Cow;
 use std::error::Error;
 
@@ -487,7 +489,9 @@ fn format(output: &str) -> Result<String, Box<Error>> {
              .expect("stdin")
              .write_all(output.as_bytes()));
     let output = try!(child.wait_with_output());
-    assert!(output.status.success());
+    if !output.status.success() {
+        return Err("rustfmt returned an error".into())
+    }
     Ok(try!(String::from_utf8(output.stdout)))
 }
 

@@ -4,85 +4,87 @@
     pub type PositiveInteger = i64;
 pub type PositiveIntegerDefault0 = serde_json::Value;
 pub type SchemaArray = Vec<Schema>;
-# [ serde ( rename = "simpleTypes" ) ]
-# [ derive ( Clone , PartialEq , Debug , Deserialize , Serialize ) ]
+#[serde(rename = "simpleTypes")]
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub enum SimpleTypes {
-    # [ serde ( rename = "array" ) ]
+    #[serde(rename = "array")]
     Array,
-    # [ serde ( rename = "boolean" ) ]
+    #[serde(rename = "boolean")]
     Boolean,
-    # [ serde ( rename = "integer" ) ]
+    #[serde(rename = "integer")]
     Integer,
-    # [ serde ( rename = "null" ) ]
+    #[serde(rename = "null")]
     Null,
-    # [ serde ( rename = "number" ) ]
+    #[serde(rename = "number")]
     Number,
-    # [ serde ( rename = "object" ) ]
+    #[serde(rename = "object")]
     Object,
-    # [ serde ( rename = "string" ) ]
+    #[serde(rename = "string")]
     String,
 }
 pub type StringArray = Vec<String>;
-# [ derive ( Clone , PartialEq , Debug , Deserialize , Serialize ) ]
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Schema {
-    # [ serde ( rename = "$ref" ) ]
+    #[serde(rename = "$ref")]
     pub ref_: Option<String>,
-    # [ serde ( rename = "$schema" ) ]
+    #[serde(rename = "$schema")]
     pub schema: Option<String>,
-    # [ serde ( rename = "additionalItems" ) ]
+    #[serde(rename = "additionalItems")]
     pub additional_items: Option<serde_json::Value>,
-    # [ serde ( rename = "additionalProperties" ) ]
+    #[serde(rename = "additionalProperties")]
     pub additional_properties: Option<serde_json::Value>,
-    # [ serde ( rename = "allOf" ) ]
+    #[serde(rename = "allOf")]
     pub all_of: Option<SchemaArray>,
-    # [ serde ( rename = "anyOf" ) ]
+    #[serde(rename = "anyOf")]
     pub any_of: Option<SchemaArray>,
     pub default: Option<serde_json::Value>,
     #[serde(default)]
     pub definitions: ::std::collections::BTreeMap<String, Schema>,
     pub dependencies: Option<::std::collections::BTreeMap<String, serde_json::Value>>,
     pub description: Option<String>,
-    # [ serde ( rename = "enum" ) ]
+    #[serde(rename = "enum")]
     pub enum_: Option<Vec<serde_json::Value>>,
-    # [ serde ( rename = "exclusiveMaximum" ) ]
+    #[serde(rename = "exclusiveMaximum")]
     pub exclusive_maximum: Option<bool>,
-    # [ serde ( rename = "exclusiveMinimum" ) ]
+    #[serde(rename = "exclusiveMinimum")]
     pub exclusive_minimum: Option<bool>,
     pub id: Option<String>,
     #[serde(default)]
-    #[serde(serialize_with="one_or_many::serialize", deserialize_with="one_or_many::deserialize")]
+    #[serde(serialize_with = "one_or_many::serialize",
+            deserialize_with = "one_or_many::deserialize")]
     pub items: Vec<Schema>,
-    # [ serde ( rename = "maxItems" ) ]
+    #[serde(rename = "maxItems")]
     pub max_items: Option<PositiveInteger>,
-    # [ serde ( rename = "maxLength" ) ]
+    #[serde(rename = "maxLength")]
     pub max_length: Option<PositiveInteger>,
-    # [ serde ( rename = "maxProperties" ) ]
+    #[serde(rename = "maxProperties")]
     pub max_properties: Option<PositiveInteger>,
     pub maximum: Option<f64>,
-    # [ serde ( rename = "minItems" ) ]
+    #[serde(rename = "minItems")]
     pub min_items: Option<PositiveIntegerDefault0>,
-    # [ serde ( rename = "minLength" ) ]
+    #[serde(rename = "minLength")]
     pub min_length: Option<PositiveIntegerDefault0>,
-    # [ serde ( rename = "minProperties" ) ]
+    #[serde(rename = "minProperties")]
     pub min_properties: Option<PositiveIntegerDefault0>,
     pub minimum: Option<f64>,
-    # [ serde ( rename = "multipleOf" ) ]
+    #[serde(rename = "multipleOf")]
     pub multiple_of: Option<f64>,
     pub not: Option<Box<Schema>>,
-    # [ serde ( rename = "oneOf" ) ]
+    #[serde(rename = "oneOf")]
     pub one_of: Option<SchemaArray>,
     pub pattern: Option<String>,
     #[serde(default)]
-    # [ serde ( rename = "patternProperties" ) ]
+    #[serde(rename = "patternProperties")]
     pub pattern_properties: ::std::collections::BTreeMap<String, Schema>,
     #[serde(default)]
     pub properties: ::std::collections::BTreeMap<String, Schema>,
     pub required: Option<StringArray>,
     pub title: Option<String>,
     #[serde(default)]
-    #[serde(serialize_with="one_or_many::serialize", deserialize_with="one_or_many::deserialize")]
-    # [ serde ( rename = "type" ) ]
+    #[serde(serialize_with = "one_or_many::serialize",
+            deserialize_with = "one_or_many::deserialize")]
+    #[serde(rename = "type")]
     pub type_: Vec<SimpleTypes>,
-    # [ serde ( rename = "uniqueItems" ) ]
+    #[serde(rename = "uniqueItems")]
     pub unique_items: Option<bool>,
 }

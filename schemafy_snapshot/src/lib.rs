@@ -33,7 +33,9 @@ impl<S: AsRef<str>> ToTokens for Ident<S> {
 }
 
 fn rename_keyword(prefix: &str, s: &str) -> Option<Tokens> {
-    if ["type", "struct", "enum"].iter().any(|&keyword| keyword == s) {
+    if ["type", "struct", "enum"]
+           .iter()
+           .any(|&keyword| keyword == s) {
         let n = Ident(format!("{}_", s));
         let prefix = Ident(prefix);
         Some(quote!{
@@ -154,13 +156,17 @@ struct FieldExpander<'a, 'r: 'a> {
 impl<'a, 'r> FieldExpander<'a, 'r> {
     fn expand_fields(&mut self, type_name: &str, schema: &Schema) -> Vec<Tokens> {
         let schema = self.expander.schema(schema);
-        schema.properties
+        schema
+            .properties
             .iter()
             .map(|(field_name, value)| {
                 self.expander.current_field.clone_from(field_name);
                 let key = field(field_name);
-                let required =
-                    schema.required.iter().flat_map(|a| a.iter()).any(|req| req == field_name);
+                let required = schema
+                    .required
+                    .iter()
+                    .flat_map(|a| a.iter())
+                    .any(|req| req == field_name);
                 let field_type = self.expander.expand_type(type_name, required, value);
                 if !field_type.typ.starts_with("Option<") {
                     self.default = false;
@@ -177,9 +183,13 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
                 } else {
                     Some(Ident(format!("#[serde({})]", field_type.attributes.iter().format(", "))))
                 };
-                let comment = value.description
-                    .as_ref()
-                    .map(|comment| Ident(make_doc_comment(comment, LINE_LENGTH - INDENT_LENGTH)));
+                let comment =
+                    value
+                        .description
+                        .as_ref()
+                        .map(|comment| {
+                                 Ident(make_doc_comment(comment, LINE_LENGTH - INDENT_LENGTH))
+                             });
                 quote!{
                     #comment
                     #default
@@ -193,6 +203,7 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
 
 struct Expander<'r> {
     root_name: Option<&'r str>,
+    schemafy_path: &'r str,
     root: &'r Schema,
     current_type: String,
     current_field: String,
@@ -218,10 +229,11 @@ impl<S> From<S> for FieldType
 }
 
 impl<'r> Expander<'r> {
-    fn new(root_name: Option<&'r str>, root: &'r Schema) -> Expander<'r> {
+    fn new(root_name: Option<&'r str>, schemafy_path: &'r str, root: &'r Schema) -> Expander<'r> {
         Expander {
-            root_name: root_name,
-            root: root,
+            root_name,
+            root,
+            schemafy_path,
             current_field: "".into(),
             current_type: "".into(),
             types: Vec::new(),
@@ -232,7 +244,10 @@ impl<'r> Expander<'r> {
         if s == "#" {
             self.root_name.expect("Root name").to_pascal_case()
         } else {
-            s.split('/').last().expect("Component").to_pascal_case()
+            s.split('/')
+                .last()
+                .expect("Component")
+                .to_pascal_case()
         }
     }
 
@@ -243,7 +258,8 @@ impl<'r> Expander<'r> {
         };
         match schema.all_of {
             Some(ref all_of) if !all_of.is_empty() => {
-                all_of.iter()
+                all_of
+                    .iter()
                     .skip(1)
                     .fold(self.schema(&all_of[0]).clone(), |mut result, def| {
                         merge_all_of(result.to_mut(), &self.schema(def));
@@ -255,15 +271,17 @@ impl<'r> Expander<'r> {
     }
 
     fn schema_ref(&self, s: &str) -> &'r Schema {
-        s.split('/').fold(self.root, |schema, comp| if comp == "#" {
-            self.root
-        } else if comp == "definitions" {
-            schema
-        } else {
-            schema.definitions
-                .get(comp)
-                .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp))
-        })
+        s.split('/')
+            .fold(self.root, |schema, comp| if comp == "#" {
+                self.root
+            } else if comp == "definitions" {
+                schema
+            } else {
+                schema
+                    .definitions
+                    .get(comp)
+                    .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp))
+            })
     }
 
     fn expand_type(&mut self, type_name: &str, required: bool, typ: &Schema) -> FieldType {
@@ -290,11 +308,10 @@ impl<'r> Expander<'r> {
             if let SimpleTypes::Array = array.type_[0] {
                 if simple == self.schema(&array.items[0]) {
                     return FieldType {
-                        typ: format!("Vec<{}>", self.expand_type_(&any_of[0]).typ),
-                        attributes: vec![r#"serialize_with="one_or_many::serialize""#.into(),
-                                         r#"deserialize_with="one_or_many::deserialize""#.into()],
-                        default: true,
-                    };
+                               typ: format!("Vec<{}>", self.expand_type_(&any_of[0]).typ),
+                               attributes: vec![format!(r#"with="{}one_or_many""#, self.schemafy_path)],
+                               default: true,
+                           };
                 }
             }
             return "serde_json::Value".into();
@@ -331,8 +348,10 @@ impl<'r> Expander<'r> {
                     name.into()
                 }
                 SimpleTypes::Array => {
-                    let item_type = typ.items.get(0).map_or("serde_json::Value".into(),
-                                                            |item| self.expand_type_(item).typ);
+                    let item_type = typ.items
+                        .get(0)
+                        .map_or("serde_json::Value".into(),
+                                |item| self.expand_type_(item).typ);
                     format!("Vec<{}>", item_type).into()
                 }
                 _ => "serde_json::Value".into(),
@@ -390,14 +409,19 @@ impl<'r> Expander<'r> {
                 }
             }
         } else if schema.enum_.as_ref().map_or(false, |e| !e.is_empty()) {
-            let variants = schema.enum_.as_ref().map_or(&[][..], |v| v).iter().map(|v| match *v {
-                Value::String(ref v) => {
+            let variants = schema
+                .enum_
+                .as_ref()
+                .map_or(&[][..], |v| v)
+                .iter()
+                .map(|v| match *v {
+                         Value::String(ref v) => {
                     let pascal_case_variant = v.to_pascal_case();
                     let variant_name = rename_keyword("", &pascal_case_variant)
                         .unwrap_or_else(|| {
-                            let v = Ident(&pascal_case_variant);
-                            quote!(#v)
-                        });
+                                            let v = Ident(&pascal_case_variant);
+                                            quote!(#v)
+                                        });
                     if pascal_case_variant == *v {
                         variant_name
                     } else {
@@ -407,8 +431,8 @@ impl<'r> Expander<'r> {
                             }
                     }
                 }
-                _ => panic!("Expected string"),
-            });
+                         _ => panic!("Expected string"),
+                     });
             quote! {
                 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
                 pub enum #name {
@@ -452,20 +476,52 @@ fn format(output: &str) -> Result<String, Box<Error>> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let mut child =
-        try!(Command::new("rustfmt").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
-    try!(child.stdin.as_mut().expect("stdin").write_all(output.as_bytes()));
+    let mut child = try!(Command::new("rustfmt")
+                             .stdin(Stdio::piped())
+                             .stdout(Stdio::piped())
+                             .spawn());
+    try!(child
+             .stdin
+             .as_mut()
+             .expect("stdin")
+             .write_all(output.as_bytes()));
     let output = try!(child.wait_with_output());
-    assert!(output.status.success());
+    if !output.status.success() {
+        return Err("rustfmt returned an error".into())
+    }
     Ok(try!(String::from_utf8(output.stdout)))
 }
 
-pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
-    let schema = serde_json::from_str(s).unwrap();
-    let mut expander = Expander::new(root_name, &schema);
-    let output = expander.expand(&schema).to_string();
+impl<'a> Default for GenerateBuilder<'a> {
+    fn default() -> Self {
+        GenerateBuilder {
+            root_name: None,
+            schemafy_path: "::schemafy::"
+        }
+    }
+}
 
-    Ok(format(&output).unwrap_or_else(|_| output))
+pub struct GenerateBuilder<'a> {
+    pub root_name: Option<&'a str>,
+    pub schemafy_path: &'a str
+}
+
+impl<'a> GenerateBuilder<'a> {
+    pub fn build(self, s: &str) -> Result<String, Box<Error>> {
+        let schema = serde_json::from_str(s).unwrap();
+        let mut expander = Expander::new(self.root_name, self.schemafy_path, &schema);
+        let output = expander.expand(&schema).to_string();
+
+        Ok(format(&output).unwrap_or_else(|_| output))
+    }
+}
+
+pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
+    GenerateBuilder {
+        root_name,
+        ..
+        GenerateBuilder::default()
+    }.build(s)
 }
 
 #[cfg(test)]
@@ -487,9 +543,10 @@ mod tests {
         verify_compile("schema", &s);
 
         assert!(s.contains("pub struct Schema"), "{}", s);
-        assert!(s.contains("pub type PositiveInteger = i64"));
-        assert!(s.contains("pub type_: Vec<SimpleTypes>"));
-        assert!(s.contains("pub enum SimpleTypes {\n    # [ serde ( rename = \"array\" ) ]"));
+        assert!(s.contains("pub type PositiveInteger = i64"), s);
+        assert!(s.contains("pub type_: Vec<SimpleTypes>"), s);
+        assert!(s.contains("pub enum SimpleTypes {\n    #[serde(rename = \"array\")]"),
+                s);
 
         let result = Command::new("rustc")
             .args(&["-L",
@@ -520,8 +577,6 @@ mod tests {
             extern crate serde_derive;
             extern crate serde_json;
             extern crate schemafy;
-            
-            use schemafy::one_or_many;
             "#;
             file.write_all(header.as_bytes()).unwrap();
             file.write_all(s.as_bytes()).unwrap();

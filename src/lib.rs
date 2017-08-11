@@ -11,8 +11,6 @@ extern crate itertools;
 pub mod one_or_many;
 pub mod schema;
 
-use self as schemafy;
-
 use std::borrow::Cow;
 use std::error::Error;
 
@@ -205,6 +203,7 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
 
 struct Expander<'r> {
     root_name: Option<&'r str>,
+    schemafy_path: &'r str,
     root: &'r Schema,
     current_type: String,
     current_field: String,
@@ -230,10 +229,11 @@ impl<S> From<S> for FieldType
 }
 
 impl<'r> Expander<'r> {
-    fn new(root_name: Option<&'r str>, root: &'r Schema) -> Expander<'r> {
+    fn new(root_name: Option<&'r str>, schemafy_path: &'r str, root: &'r Schema) -> Expander<'r> {
         Expander {
-            root_name: root_name,
-            root: root,
+            root_name,
+            root,
+            schemafy_path,
             current_field: "".into(),
             current_type: "".into(),
             types: Vec::new(),
@@ -309,10 +309,7 @@ impl<'r> Expander<'r> {
                 if simple == self.schema(&array.items[0]) {
                     return FieldType {
                                typ: format!("Vec<{}>", self.expand_type_(&any_of[0]).typ),
-                               attributes: vec![r#"serialize_with="::schemafy::one_or_many::serialize""#
-                                                    .into(),
-                                                r#"deserialize_with="schemafy::one_or_many::deserialize""#
-                                                    .into()],
+                               attributes: vec![format!(r#"with="{}one_or_many""#, self.schemafy_path)],
                                default: true,
                            };
                 }
@@ -495,12 +492,36 @@ fn format(output: &str) -> Result<String, Box<Error>> {
     Ok(try!(String::from_utf8(output.stdout)))
 }
 
-pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
-    let schema = serde_json::from_str(s).unwrap();
-    let mut expander = Expander::new(root_name, &schema);
-    let output = expander.expand(&schema).to_string();
+impl<'a> Default for GenerateBuilder<'a> {
+    fn default() -> Self {
+        GenerateBuilder {
+            root_name: None,
+            schemafy_path: "::schemafy::"
+        }
+    }
+}
 
-    Ok(format(&output).unwrap_or_else(|_| output))
+pub struct GenerateBuilder<'a> {
+    pub root_name: Option<&'a str>,
+    pub schemafy_path: &'a str
+}
+
+impl<'a> GenerateBuilder<'a> {
+    pub fn build(self, s: &str) -> Result<String, Box<Error>> {
+        let schema = serde_json::from_str(s).unwrap();
+        let mut expander = Expander::new(self.root_name, self.schemafy_path, &schema);
+        let output = expander.expand(&schema).to_string();
+
+        Ok(format(&output).unwrap_or_else(|_| output))
+    }
+}
+
+pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
+    GenerateBuilder {
+        root_name,
+        ..
+        GenerateBuilder::default()
+    }.build(s)
 }
 
 #[cfg(test)]

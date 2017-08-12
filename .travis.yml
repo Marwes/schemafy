@@ -9,7 +9,9 @@ before_script:
 - export PATH=$HOME/.cargo/bin:$PATH
 - type rustfmt || (rustup install nightly && cargo +nightly install rustfmt-nightly)
 script:
-- cargo test
+- |
+  cargo build &&
+    cargo test
 env:
   global:
   - RUST_BACKTRACE=1

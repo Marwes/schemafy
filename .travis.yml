@@ -9,9 +9,12 @@ before_script:
 - export PATH=$HOME/.cargo/bin:$PATH
 - type rustfmt || (rustup install nightly && cargo +nightly install rustfmt-nightly)
 script:
-- |
-  cargo build &&
-    cargo test
+# Fix rustfmt dll loading
+- rustc +nightly --print sysroot
+- ls $(rustc +nightly --print sysroot)/lib
+- cargo build &&
+  LD_LIBRARY_PATH=$(rustc +nightly --print sysroot)/lib:$LD_LIBRARY_PATH cargo test
 env:
   global:
   - RUST_BACKTRACE=1
+

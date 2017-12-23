@@ -8,7 +8,8 @@ rust:
 before_script:
 - export PATH=$HOME/.cargo/bin:$PATH
 - rustup install nightly 
-- type rustfmt || cargo +nightly install rustfmt-nightly
+# We need to run `rustfmt --version` to make sure that this is actually rustfmt and not rustup's fake rustfmt
+- (type rustfmt && rustfmt --version) || cargo +nightly install rustfmt-nightly --force
 script:
 # Fix rustfmt dll loading
 - rustc +nightly --print sysroot

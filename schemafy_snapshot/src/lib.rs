@@ -590,13 +590,15 @@ mod tests {
                     &format!("target/debug/deps/lib{}.rlib", name),
                     filename.to_str().unwrap()])
             .stderr(Stdio::piped())
+            .stdout(Stdio::piped())
             .spawn()
             .unwrap();
 
 
         let output = child.wait_with_output().unwrap();
+        let out = String::from_utf8(output.stdout).unwrap();
         let error = String::from_utf8(output.stderr).unwrap();
-        assert!(output.status.success(), "{}", error);
+        assert!(output.status.success(), "STDOUT: {}\n\nSTDERR: {}", out, error);
     }
 
     #[test]

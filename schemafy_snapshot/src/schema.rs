@@ -1,5 +1,4 @@
 
-    use one_or_many;
     use serde_json;
     pub type PositiveInteger = i64;
 pub type PositiveIntegerDefault0 = serde_json::Value;
@@ -50,8 +49,7 @@ pub struct Schema {
     pub exclusive_minimum: Option<bool>,
     pub id: Option<String>,
     #[serde(default)]
-    #[serde(serialize_with = "one_or_many::serialize",
-            deserialize_with = "one_or_many::deserialize")]
+    #[serde(with = "::one_or_many")]
     pub items: Vec<Schema>,
     #[serde(rename = "maxItems")]
     pub max_items: Option<PositiveInteger>,
@@ -81,8 +79,7 @@ pub struct Schema {
     pub required: Option<StringArray>,
     pub title: Option<String>,
     #[serde(default)]
-    #[serde(serialize_with = "one_or_many::serialize",
-            deserialize_with = "one_or_many::deserialize")]
+    #[serde(with = "::one_or_many")]
     #[serde(rename = "type")]
     pub type_: Vec<SimpleTypes>,
     #[serde(rename = "uniqueItems")]

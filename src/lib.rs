@@ -34,8 +34,12 @@ impl<S: AsRef<str>> ToTokens for Ident<S> {
     }
 }
 
+fn replace_invalid_identifier_chars(s: &str) -> String {
+    s.replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
+}
+
 fn rename_keyword(prefix: &str, s: &str) -> Option<Tokens> {
-    if ["type", "struct", "enum"]
+    if ["type", "struct", "enum", "as"]
         .iter()
         .any(|&keyword| keyword == s)
     {
@@ -246,11 +250,12 @@ impl<'r> Expander<'r> {
     }
 
     fn type_ref(&self, s: &str) -> String {
-        if s == "#" {
-            self.root_name.expect("Root name").to_pascal_case()
+        let s = if s == "#" {
+            self.root_name.expect("Root name")
         } else {
-            s.split('/').last().expect("Component").to_pascal_case()
-        }
+            s.split('/').last().expect("Component")
+        };
+        replace_invalid_identifier_chars(&s.to_pascal_case())
     }
 
     fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {
@@ -286,9 +291,6 @@ impl<'r> Expander<'r> {
     }
 
     fn expand_type(&mut self, type_name: &str, required: bool, typ: &Schema) -> FieldType {
-        if type_name == "StoppedEvent" {
-            println!("{:#?}", typ);
-        }
         let mut result = self.expand_type_(typ);
         if type_name == result.typ {
             result.typ = format!("Box<{}>", result.typ)
@@ -306,13 +308,17 @@ impl<'r> Expander<'r> {
             let any_of = typ.any_of.as_ref().unwrap();
             let simple = self.schema(&any_of[0]);
             let array = self.schema(&any_of[1]);
-            if let SimpleTypes::Array = array.type_[0] {
-                if simple == self.schema(&array.items[0]) {
-                    return FieldType {
-                        typ: format!("Vec<{}>", self.expand_type_(&any_of[0]).typ),
-                        attributes: vec![format!(r#"with="{}one_or_many""#, self.schemafy_path)],
-                        default: true,
-                    };
+            if !array.type_.is_empty() {
+                if let SimpleTypes::Array = array.type_[0] {
+                    if simple == self.schema(&array.items[0]) {
+                        return FieldType {
+                            typ: format!("Vec<{}>", self.expand_type_(&any_of[0]).typ),
+                            attributes: vec![
+                                format!(r#"with="{}one_or_many""#, self.schemafy_path),
+                            ],
+                            default: true,
+                        };
+                    }
                 }
             }
             return "serde_json::Value".into();
@@ -385,7 +391,7 @@ impl<'r> Expander<'r> {
     pub fn expand_schema(&mut self, original_name: &str, schema: &Schema) -> Tokens {
         self.expand_definitions(schema);
 
-        let pascal_case_name = original_name.to_pascal_case();
+        let pascal_case_name = replace_invalid_identifier_chars(&original_name.to_pascal_case());
         self.current_type.clone_from(&pascal_case_name);
         let (fields, default) = {
             let mut field_expander = FieldExpander {
@@ -396,57 +402,77 @@ impl<'r> Expander<'r> {
             (fields, field_expander.default)
         };
         let name = Ident(pascal_case_name);
-        let type_decl =
-            if !fields.is_empty() {
-                if default {
-                    quote! {
-                        #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
-                        pub struct #name {
-                            #(#fields),*
-                        }
-                    }
-                } else {
-                    quote! {
-                        #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
-                        pub struct #name {
-                            #(#fields),*
-                        }
+        let type_decl = if !fields.is_empty() {
+            if default {
+                quote! {
+                    #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
+                    pub struct #name {
+                        #(#fields),*
                     }
                 }
-            } else if schema.enum_.as_ref().map_or(false, |e| !e.is_empty()) {
-                let variants = schema.enum_.as_ref().map_or(&[][..], |v| v).iter().map(
-                    |v| match *v {
-                        Value::String(ref v) => {
-                            let pascal_case_variant = v.to_pascal_case();
-                            let variant_name = rename_keyword("", &pascal_case_variant)
-                                .unwrap_or_else(|| {
-                                    let v = Ident(&pascal_case_variant);
-                                    quote!(#v)
-                                });
-                            if pascal_case_variant == *v {
-                                variant_name
-                            } else {
-                                quote! {
-                                    #[serde(rename = #v)]
-                                    #variant_name
-                                }
+            } else {
+                quote! {
+                    #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+                    pub struct #name {
+                        #(#fields),*
+                    }
+                }
+            }
+        } else if schema.enum_.as_ref().map_or(false, |e| !e.is_empty()) {
+            let mut optional = false;
+            let variants = schema
+                .enum_
+                .as_ref()
+                .map_or(&[][..], |v| v)
+                .iter()
+                .flat_map(|v| match *v {
+                    Value::String(ref v) => {
+                        let pascal_case_variant = v.to_pascal_case();
+                        let variant_name = rename_keyword("", &pascal_case_variant)
+                            .unwrap_or_else(|| {
+                                let v = Ident(&pascal_case_variant);
+                                quote!(#v)
+                            });
+                        Some(if pascal_case_variant == *v {
+                            variant_name
+                        } else {
+                            quote! {
+                                #[serde(rename = #v)]
+                                #variant_name
                             }
-                        }
-                        _ => panic!("Expected string"),
-                    },
-                );
+                        })
+                    }
+                    Value::Null => {
+                        optional = true;
+                        None
+                    }
+                    _ => panic!("Expected string for enum got `{}`", v),
+                })
+                .collect::<Vec<_>>();
+
+            if optional {
+                let enum_name = Ident(format!("{}_", name.0));
+                quote! {
+                    pub type #name = Option<#enum_name>;
+                    #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+                    pub enum #enum_name {
+                        #(#variants),*
+                    }
+                }
+            } else {
                 quote! {
                     #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
                     pub enum #name {
                         #(#variants),*
                     }
                 }
-            } else {
-                let typ = Ident(self.expand_type("", true, schema).typ);
-                return quote! {
-                    pub type #name = #typ;
-                };
+            }
+        } else {
+            let typ = Ident(self.expand_type("", true, schema).typ);
+            return quote! {
+                pub type #name = #typ;
             };
+        };
         if original_name == name.0 {
             type_decl
         } else {
@@ -638,8 +664,17 @@ mod tests {
 
         let s = generate(None, s).unwrap().to_string();
 
-        verify_compile("debug-server", &s);
+        verify_compile("nested-definition", &s);
 
         assert!(s.contains("pub struct Defnested"));
+    }
+
+    #[test]
+    fn vega() {
+        let s = include_str!("../tests/vega/vega.json");
+
+        let s = generate(None, s).unwrap().to_string();
+
+        verify_compile("vega", &s);
     }
 }

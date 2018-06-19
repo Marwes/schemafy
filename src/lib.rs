@@ -690,4 +690,13 @@ mod tests {
 
         verify_compile("vega", &s);
     }
+
+    #[test]
+    fn optional_type() {
+        let s = include_str!("../tests/option-type.json");
+
+        let s = generate(Some("OptionType"), s).unwrap().to_string();
+
+        assert!(s.contains("pub optional: Option<i64>"));
+    }
 }

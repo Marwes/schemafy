@@ -322,6 +322,19 @@ impl<'r> Expander<'r> {
                 }
             }
             return "serde_json::Value".into();
+        } else if typ.type_.len() == 2 {
+            if typ.type_[0] == SimpleTypes::Null || typ.type_[1] == SimpleTypes::Null {
+                let mut ty = typ.clone();
+                ty.type_.retain(|x| *x != SimpleTypes::Null);
+
+                FieldType {
+                    typ: format!("Option<{}>", self.expand_type_(&ty).typ),
+                    attributes: vec![],
+                    default: true,
+                }
+            } else {
+                "serde_json::Value".into()
+            }
         } else if typ.type_.len() == 1 {
             match typ.type_[0] {
                 SimpleTypes::String => {
@@ -676,5 +689,14 @@ mod tests {
         let s = generate(None, s).unwrap().to_string();
 
         verify_compile("vega", &s);
+    }
+
+    #[test]
+    fn optional_type() {
+        let s = include_str!("../tests/option-type.json");
+
+        let s = generate(Some("OptionType"), s).unwrap().to_string();
+
+        assert!(s.contains("pub optional: Option<i64>"));
     }
 }

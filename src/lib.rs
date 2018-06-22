@@ -1,3 +1,8 @@
+// This would be nice once it stabilizes:
+// https://github.com/rust-lang/rust/issues/44732
+// #![feature(external_doc)]
+// #![doc(include = "../README.md")]
+
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -9,6 +14,11 @@ extern crate itertools;
 extern crate quote;
 
 pub mod one_or_many;
+/// Types from the JSON Schema meta-schema (draft 4).
+///
+/// This module is itself generated from a JSON schema. Thus, the
+/// `build.rs` script for this crate also serves as an example of how
+/// to use it.
 pub mod schema;
 
 use std::borrow::Cow;
@@ -540,13 +550,28 @@ impl<'a> Default for GenerateBuilder<'a> {
     }
 }
 
+/// A configurable builder for generating Rust types from a JSON
+/// schema.
+///
+/// The default options are usually fine. In that case, you can use
+/// the [`generate()`](fn.generate.html) convenience method instead.
 pub struct GenerateBuilder<'a> {
+    /// The name of the root type defined by the schema. If the schema
+    /// does not define a root type (some schemas are simply a
+    /// collection of definitions) then simply pass `None`.
     pub root_name: Option<&'a str>,
+    /// The module path to this crate. Some generated code may make
+    /// use of types defined in this crate. Unless you have
+    /// re-exported this crate or imported it under a different name,
+    /// the default should be fine.
     pub schemafy_path: &'a str,
+    /// A command to format the generated Rust code. The command
+    /// should read from stdin and write to stdout.
     pub rustfmt_cmd: Option<Command>,
 }
 
 impl<'a> GenerateBuilder<'a> {
+    /// Generate Rust types.
     pub fn build(self, s: &str) -> Result<String, Box<Error>> {
         let schema = serde_json::from_str(s).unwrap();
         let mut expander = Expander::new(self.root_name, self.schemafy_path, &schema);
@@ -559,11 +584,33 @@ impl<'a> GenerateBuilder<'a> {
     }
 }
 
-pub fn generate(root_name: Option<&str>, s: &str) -> Result<String, Box<Error>> {
+/// Generate Rust types from a JSON schema.
+///
+/// If the `root_name` parameter is supplied, then a type will be
+/// generated from the root of the schema. If your schema does not
+/// define a root type, just pass `None`.
+///
+/// ```rust
+/// // build.rs
+/// extern crate schemafy;
+/// use schemafy::generate;
+///
+/// fn main() -> Result<(), Box<std::error::Error>> {
+///     let schema = std::fs::read_to_string("src/schema.json")?;
+///     let output = generate(Some("Schema"), &schema)?;
+///     # return Ok(()); // Don't actually write the output
+///     std::fs::write("src/schema.rs", output.as_bytes())?;
+///     Ok(())
+/// }
+/// ```
+///
+/// This is a convenience method. For more options, use
+/// [`GenerateBuilder`](struct.GenerateBuilder.html).
+pub fn generate(root_name: Option<&str>, schema: &str) -> Result<String, Box<Error>> {
     GenerateBuilder {
         root_name,
         ..GenerateBuilder::default()
-    }.build(s)
+    }.build(schema)
 }
 
 #[cfg(test)]

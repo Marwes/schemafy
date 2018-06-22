@@ -8,6 +8,6 @@ As a schema could be arbitrarily complex this crate makes no guarantee that it c
 
 ## Example
 
-Generated types for VS Codes [debug server protocol][]: https://docs.rs/debugserver-types
+Generated types for VS Codes [debug server protocol][]: <https://docs.rs/debugserver-types>
 
 [debug server protocol]:https://code.visualstudio.com/docs/extensions/example-debuggers

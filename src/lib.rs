@@ -392,21 +392,11 @@ impl<'r> Expander<'r> {
                 SimpleTypes::Integer => "i64".into(),
                 SimpleTypes::Boolean => "bool".into(),
                 SimpleTypes::Number => "f64".into(),
-                SimpleTypes::Object if typ.additional_properties.is_some() => {
-                    let prop =
-                        serde_json::from_value(typ.additional_properties.clone().unwrap()).unwrap();
-                    let result = format!(
-                        "::std::collections::BTreeMap<String, {}>",
-                        self.expand_type_(&prop).typ
-                    );
-                    FieldType {
-                        typ: result,
-                        attributes: Vec::new(),
-                        default: typ.default == Some(Value::Object(Default::default())),
-                    }
-                }
                 // Handle objects defined inline
-                SimpleTypes::Object if !typ.properties.is_empty() => {
+                SimpleTypes::Object
+                    if !typ.properties.is_empty()
+                        || typ.additional_properties == Some(Value::Bool(false)) =>
+                {
                     let name = format!(
                         "{}{}",
                         self.current_type.to_pascal_case(),
@@ -415,6 +405,21 @@ impl<'r> Expander<'r> {
                     let tokens = self.expand_schema(&name, typ);
                     self.types.push((name.clone(), tokens));
                     name.into()
+                }
+                SimpleTypes::Object => {
+                    let prop = match typ.additional_properties {
+                        Some(ref props) if props.is_object() => {
+                            let prop = serde_json::from_value(props.clone()).unwrap();
+                            self.expand_type_(&prop).typ
+                        }
+                        _ => "serde_json::Value".into(),
+                    };
+                    let result = format!("::std::collections::BTreeMap<String, {}>", prop);
+                    FieldType {
+                        typ: result,
+                        attributes: Vec::new(),
+                        default: typ.default == Some(Value::Object(Default::default())),
+                    }
                 }
                 SimpleTypes::Array => {
                     let item_type = typ.items.get(0).map_or("serde_json::Value".into(), |item| {
@@ -460,7 +465,9 @@ impl<'r> Expander<'r> {
             (fields, field_expander.default)
         };
         let name = Ident(pascal_case_name);
-        let type_decl = if !fields.is_empty() {
+        let is_struct =
+            !fields.is_empty() || schema.additional_properties == Some(Value::Bool(false));
+        let type_decl = if is_struct {
             if default {
                 quote! {
                     #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
@@ -779,5 +786,29 @@ mod tests {
         let s = generate(Some("OptionType"), s).unwrap().to_string();
 
         assert!(s.contains("pub optional: Option<i64>"));
+    }
+
+    #[test]
+    fn empty_struct() {
+        let s = include_str!("../tests/empty-struct.json");
+
+        let s = generate(Some("EmptyStruct"), s).unwrap().to_string();
+
+        verify_compile("empty_struct", &s);
+
+        assert!(s.contains("pub struct EmptyStruct {}"));
+    }
+
+    #[test]
+    fn any_properties() {
+        let s = include_str!("../tests/any-properties.json");
+
+        let s = generate(Some("AnyProperties"), s).unwrap().to_string();
+
+        verify_compile("any_properties", &s);
+
+        assert!(s.contains(
+            "pub type AnyProperties = ::std::collections::BTreeMap<String, serde_json::Value>;"
+        ));
     }
 }

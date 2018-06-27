@@ -1,6 +1,6 @@
 [package]
 name = "schemafy"
-version = "0.4.4"
+version = "0.4.5-alpha.0"
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 build = "build.rs"
 

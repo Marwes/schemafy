@@ -423,6 +423,7 @@ impl<'r> Expander<'r> {
                 }
                 SimpleTypes::Array => {
                     let item_type = typ.items.get(0).map_or("serde_json::Value".into(), |item| {
+                        self.current_type = format!("{}Item", self.current_type);
                         self.expand_type_(item).typ
                     });
                     format!("Vec<{}>", item_type).into()
@@ -810,5 +811,17 @@ mod tests {
         assert!(s.contains(
             "pub type AnyProperties = ::std::collections::BTreeMap<String, serde_json::Value>;"
         ));
+    }
+
+    #[test]
+    fn root_array() {
+        let s = include_str!("../tests/root-array.json");
+
+        let s = generate(Some("RootArray"), s).unwrap().to_string();
+
+        verify_compile("root_array", &s);
+
+        assert!(s.contains("pub struct RootArrayItem"));
+        assert!(s.contains("type RootArray = Vec<RootArrayItem>;"));
     }
 }

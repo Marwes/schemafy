@@ -105,7 +105,7 @@ fn field(s: &str) -> Tokens {
     } else {
         let snake = s.to_snake_case();
         if snake != s || snake.contains(|c: char| c == '$' || c == '#') {
-            let field = if snake == "$ref" {
+            let field = if snake == "ref" {
                 Ident("ref_".into())
             } else {
                 Ident(snake.replace('$', "").replace('#', ""))

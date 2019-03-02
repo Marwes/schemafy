@@ -1,25 +1,17 @@
-
-    use serde_json;
-    pub type PositiveInteger = i64;
+use serde_json;
+pub type PositiveInteger = i64;
 pub type PositiveIntegerDefault0 = serde_json::Value;
 pub type SchemaArray = Vec<Schema>;
 #[serde(rename = "simpleTypes")]
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub enum SimpleTypes {
-    #[serde(rename = "array")]
-    Array,
-    #[serde(rename = "boolean")]
-    Boolean,
-    #[serde(rename = "integer")]
-    Integer,
-    #[serde(rename = "null")]
-    Null,
-    #[serde(rename = "number")]
-    Number,
-    #[serde(rename = "object")]
-    Object,
-    #[serde(rename = "string")]
-    String,
+    #[serde(rename = "array")] Array,
+    #[serde(rename = "boolean")] Boolean,
+    #[serde(rename = "integer")] Integer,
+    #[serde(rename = "null")] Null,
+    #[serde(rename = "number")] Number,
+    #[serde(rename = "object")] Object,
+    #[serde(rename = "string")] String,
 }
 pub type StringArray = Vec<String>;
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]

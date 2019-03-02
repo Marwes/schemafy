@@ -1,8 +1,11 @@
 extern crate schemafy_snapshot;
 
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+    process::Command,
+};
 
 fn main() {
     let schema = "src/schema.json";
@@ -16,13 +19,18 @@ fn main() {
     let output = schemafy_snapshot::GenerateBuilder {
         root_name: Some("Schema"),
         schemafy_path: "::",
-    }.build(&input).unwrap();
+        rustfmt_cmd: Some(Command::new("rustfmt")),
+    }
+    .build(&input)
+    .unwrap();
     let dst = Path::new("src/schema.rs");
 
     let mut file = File::create(dst).unwrap();
-    file.write_all(br#"
+    file.write_all(
+        br#"
     use serde_json;
-    "#)
-        .unwrap();
+    "#,
+    )
+    .unwrap();
     file.write_all(output.as_bytes()).unwrap();
 }

@@ -1,5 +1,5 @@
-extern crate schemafy_helper;
-extern crate serde;
+use schemafy_helper;
+
 
 use serde::{Deserialize, Serialize};
 

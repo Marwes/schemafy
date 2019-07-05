@@ -48,18 +48,18 @@
 //!     Ok(())
 //! }
 //! ```
-extern crate schemafy_helper;
-extern crate serde;
+use schemafy_helper;
+
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
+use serde_json;
 
-extern crate inflector;
-extern crate syn;
+
+use syn;
 #[macro_use]
 extern crate quote;
 extern crate proc_macro;
-extern crate proc_macro2;
+
 
 /// Types from the JSON Schema meta-schema (draft 4).
 ///
@@ -607,7 +607,7 @@ impl<'a> GenerateBuilder<'a> {
         }
 
         impl syn::parse::Parse for Def {
-            fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+            fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
                 let root = if input.peek(syn::Ident) {
                     let root_ident: syn::Ident = input.parse()?;
                     if root_ident != "root" {

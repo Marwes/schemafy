@@ -1,7 +1,7 @@
-extern crate schemafy;
-extern crate schemafy_helper;
-extern crate serde_derive;
-extern crate serde_json;
+
+use schemafy_helper;
+
+use serde_json;
 
 use serde_derive::{Deserialize, Serialize};
 

@@ -1,0 +1,8 @@
+[package]
+name = "schemafy_helper"
+version = "0.4.0"
+authors = ["Markus Westerlind <marwes91@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

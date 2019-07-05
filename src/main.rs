@@ -1,4 +1,3 @@
-extern crate schemafy;
 extern crate schemafy_helper;
 extern crate serde;
 

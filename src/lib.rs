@@ -72,7 +72,7 @@ use inflector::Inflector;
 
 use serde_json::Value;
 
-use schema::{Schema, SimpleTypes};
+use crate::schema::{Schema, SimpleTypes};
 
 use proc_macro2::{Span, TokenStream};
 

@@ -84,13 +84,17 @@ fn replace_invalid_identifier_chars(s: &str) -> String {
 }
 
 fn rename_keyword(prefix: &str, s: &str) -> Option<Tokens> {
-    if ["type", "struct", "enum", "as"]
-        .iter()
-        .any(|&keyword| keyword == s)
-    {
+    let keywords = [
+        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
+        "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
+        "return", "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use",
+        "where", "while", "abstract", "become", "box", "do", "final", "macro", "override", "priv",
+        "typeof", "unsized", "virtual", "yield", "async", "await", "try",
+    ];
+    if keywords.iter().any(|&keyword| keyword == s) {
         let n = Ident(format!("{}_", s));
         let prefix = Ident(prefix);
-        Some(quote!{
+        Some(quote! {
             #[serde(rename = #s)]
             #prefix #n
         })

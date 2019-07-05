@@ -4,17 +4,8 @@ rust:
 - nightly
 - beta
 - stable
-before_script:
-- export PATH=$HOME/.cargo/bin:$PATH
-- rustup install nightly 
-# We need to run `rustfmt --version` to make sure that this is actually rustfmt and not rustup's fake rustfmt
-- (type rustfmt && rustfmt --version) || cargo +nightly install rustfmt-nightly --force
 script:
-# Fix rustfmt dll loading
-- rustc +nightly --print sysroot
-- ls $(rustc +nightly --print sysroot)/lib
-- cargo build &&
-  LD_LIBRARY_PATH=$(rustc +nightly --print sysroot)/lib:$LD_LIBRARY_PATH cargo test
+- cargo test
 env:
   global:
   - RUST_BACKTRACE=1

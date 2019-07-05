@@ -27,6 +27,7 @@
 //!
 //! ```rust
 //! extern crate serde;
+//! extern crate schemafy_helper;
 //! extern crate serde_json;
 //!
 //! use serde::{Serialize, Deserialize};
@@ -47,6 +48,7 @@
 //!     Ok(())
 //! }
 //! ```
+extern crate schemafy_helper;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -59,18 +61,12 @@ extern crate quote;
 extern crate proc_macro;
 extern crate proc_macro2;
 
-mod one_or_many;
 /// Types from the JSON Schema meta-schema (draft 4).
 ///
-/// This module is itself generated from a JSON schema. Thus, the
-/// `build.rs` script for this crate also serves as an example of how
-/// to use it.
+/// This module is itself generated from a JSON schema.
 mod schema;
 
 use std::borrow::Cow;
-use std::error::Error;
-use std::io::Write;
-use std::process::{Command, Stdio};
 
 use inflector::Inflector;
 
@@ -577,27 +573,11 @@ impl<'r> Expander<'r> {
     }
 }
 
-fn format(mut command: Command, output: &str) -> Result<String, Box<dyn Error>> {
-    let mut child = try!(command.stdin(Stdio::piped()).stdout(Stdio::piped()).spawn());
-    try!(child
-        .stdin
-        .as_mut()
-        .expect("stdin")
-        .write_all(output.as_bytes()));
-    let output = try!(child.wait_with_output());
-    if !output.status.success() {
-        let msg = String::from_utf8(output.stderr)?;
-        return Err(msg.into());
-    }
-    Ok(try!(String::from_utf8(output.stdout)))
-}
-
 impl<'a> Default for GenerateBuilder<'a> {
     fn default() -> Self {
         GenerateBuilder {
             root_name: None,
             schemafy_path: "::schemafy_helper::",
-            rustfmt_cmd: None,
         }
     }
 }
@@ -617,9 +597,6 @@ struct GenerateBuilder<'a> {
     /// re-exported this crate or imported it under a different name,
     /// the default should be fine.
     pub schemafy_path: &'a str,
-    /// A command to format the generated Rust code. The command
-    /// should read from stdin and write to stdout.
-    pub rustfmt_cmd: Option<Command>,
 }
 
 impl<'a> GenerateBuilder<'a> {
@@ -663,22 +640,6 @@ impl<'a> GenerateBuilder<'a> {
         );
         expander.expand(&schema).into()
     }
-
-    /// Generate Rust types.
-    fn build(self, s: &str) -> Result<String, Box<dyn Error>> {
-        let schema = serde_json::from_str(s).unwrap();
-        let mut expander = Expander::new(
-            self.root_name.as_ref().map(|s| &**s),
-            self.schemafy_path,
-            &schema,
-        );
-        let output = expander.expand(&schema).to_string();
-
-        Ok(match self.rustfmt_cmd {
-            Some(command) => format(command, &output)?,
-            None => output,
-        })
-    }
 }
 
 /// Generate Rust types from a JSON schema.
@@ -688,6 +649,7 @@ impl<'a> GenerateBuilder<'a> {
 ///
 /// ```rust
 /// extern crate serde;
+/// extern crate schemafy_helper;
 /// extern crate serde_json;
 ///
 /// use serde::{Serialize, Deserialize};
@@ -710,4 +672,23 @@ pub fn schemafy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     }
     .build_tokens(tokens.into())
     .into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn regenerate(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let tokens = GenerateBuilder {
+        ..GenerateBuilder::default()
+    }
+    .build_tokens(tokens);
+
+    {
+        let out = tokens.to_string();
+        let input = std::fs::read_to_string("src/schema.rs").unwrap();
+        if input != out {
+            std::fs::write("src/schema.rs", &out).unwrap();
+        }
+    }
+
+    tokens
 }

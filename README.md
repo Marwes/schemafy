@@ -1,6 +1,7 @@
 # schemafy
 
 [![Build Status](https://travis-ci.org/Marwes/schemafy.svg?branch=master)](https://travis-ci.org/Marwes/schemafy)
+[![Docs](https://docs.rs/schemafy/badge.svg)](https://docs.rs/schemafy)
 
 This is a Rust crate which can take a [JSON schema (draft 4)](http://json-schema.org/) and generate Rust types which are serializable with [serde](https://serde.rs/). No checking such as `min_value` are done but instead only the structure of the schema is followed as closely as possible.
 

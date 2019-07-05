@@ -675,6 +675,8 @@ pub fn schemafy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[doc(hidden)]
 #[proc_macro]
 pub fn regenerate(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    use std::process::Command;
+
     let tokens = GenerateBuilder {
         ..GenerateBuilder::default()
     }
@@ -682,10 +684,11 @@ pub fn regenerate(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     {
         let out = tokens.to_string();
-        let input = std::fs::read_to_string("src/schema.rs").unwrap();
-        if input != out {
-            std::fs::write("src/schema.rs", &out).unwrap();
-        }
+        std::fs::write("src/schema.rs", &out).unwrap();
+        Command::new("rustfmt")
+            .arg("src/schema.rs")
+            .output()
+            .unwrap();
     }
 
     tokens

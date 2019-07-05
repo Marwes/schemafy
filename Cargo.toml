@@ -27,3 +27,6 @@ syn = "0.15"
 
 Inflector = "0.11"
 
+
+[features]
+internal-regenerate = []

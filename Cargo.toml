@@ -19,7 +19,7 @@ proc-macro = true
 [dependencies]
 proc-macro2 = "0.4"
 quote = "0.6"
-schemafy_helper = { version = "0.4", path = "schemafy_helper" }
+schemafy_core = { version = "0.4", path = "schemafy_core" }
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"

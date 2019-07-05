@@ -1,5 +1,4 @@
-use schemafy_helper;
-
+use schemafy_core;
 
 use serde::{Deserialize, Serialize};
 

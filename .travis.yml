@@ -5,7 +5,7 @@ rust:
 - beta
 - stable
 script:
-- cargo test
+- cargo test --all
 env:
   global:
   - RUST_BACKTRACE=1

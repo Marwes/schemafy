@@ -27,7 +27,7 @@
 //!
 //! ```rust
 //! extern crate serde;
-//! extern crate schemafy_helper;
+//! extern crate schemafy_core;
 //! extern crate serde_json;
 //!
 //! use serde::{Serialize, Deserialize};
@@ -48,18 +48,16 @@
 //!     Ok(())
 //! }
 //! ```
-use schemafy_helper;
+use schemafy_core;
 
 #[macro_use]
 extern crate serde_derive;
 use serde_json;
 
-
 use syn;
 #[macro_use]
 extern crate quote;
 extern crate proc_macro;
-
 
 /// Types from the JSON Schema meta-schema (draft 4).
 ///
@@ -577,7 +575,7 @@ impl<'a> Default for GenerateBuilder<'a> {
     fn default() -> Self {
         GenerateBuilder {
             root_name: None,
-            schemafy_path: "::schemafy_helper::",
+            schemafy_path: "::schemafy_core::",
         }
     }
 }
@@ -649,7 +647,7 @@ impl<'a> GenerateBuilder<'a> {
 ///
 /// ```rust
 /// extern crate serde;
-/// extern crate schemafy_helper;
+/// extern crate schemafy_core;
 /// extern crate serde_json;
 ///
 /// use serde::{Serialize, Deserialize};

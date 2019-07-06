@@ -1,17 +1,23 @@
-use serde_json;
 pub type PositiveInteger = i64;
 pub type PositiveIntegerDefault0 = serde_json::Value;
 pub type SchemaArray = Vec<Schema>;
 #[serde(rename = "simpleTypes")]
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub enum SimpleTypes {
-    #[serde(rename = "array")] Array,
-    #[serde(rename = "boolean")] Boolean,
-    #[serde(rename = "integer")] Integer,
-    #[serde(rename = "null")] Null,
-    #[serde(rename = "number")] Number,
-    #[serde(rename = "object")] Object,
-    #[serde(rename = "string")] String,
+    #[serde(rename = "array")]
+    Array,
+    #[serde(rename = "boolean")]
+    Boolean,
+    #[serde(rename = "integer")]
+    Integer,
+    #[serde(rename = "null")]
+    Null,
+    #[serde(rename = "number")]
+    Number,
+    #[serde(rename = "object")]
+    Object,
+    #[serde(rename = "string")]
+    String,
 }
 pub type StringArray = Vec<String>;
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
@@ -41,7 +47,7 @@ pub struct Schema {
     pub exclusive_minimum: Option<bool>,
     pub id: Option<String>,
     #[serde(default)]
-    #[serde(with = "::one_or_many")]
+    #[serde(with = "::schemafy_core::one_or_many")]
     pub items: Vec<Schema>,
     #[serde(rename = "maxItems")]
     pub max_items: Option<PositiveInteger>,
@@ -71,7 +77,7 @@ pub struct Schema {
     pub required: Option<StringArray>,
     pub title: Option<String>,
     #[serde(default)]
-    #[serde(with = "::one_or_many")]
+    #[serde(with = "::schemafy_core::one_or_many")]
     #[serde(rename = "type")]
     pub type_: Vec<SimpleTypes>,
     #[serde(rename = "uniqueItems")]

@@ -7,11 +7,11 @@ where
     T: serde::Deserialize<'de>,
     D: serde::Deserializer<'de>,
 {
-    use std::marker::PhantomData;
     use std::fmt;
+    use std::marker::PhantomData;
 
-    use serde::de::{self, Deserialize, IntoDeserializer};
     use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
+    use serde::de::{self, Deserialize, IntoDeserializer};
 
     struct OneOrManyDeserializer<T>(PhantomData<T>);
     impl<'de2, T> serde::de::Visitor<'de2> for OneOrManyDeserializer<T>
@@ -20,7 +20,7 @@ where
     {
         type Value = Vec<T>;
 
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             formatter.write_str("one or many")
         }
 
@@ -119,12 +119,10 @@ mod tests {
     fn deserialize_one_struct() {
         assert_eq!(
             from_str::<OneOrMany<Test>>(r#"{ "x" : 10, "y" : "test" }"#).unwrap(),
-            OneOrMany(vec![
-                Test {
-                    x: 10,
-                    y: Some("test".to_string()),
-                },
-            ])
+            OneOrMany(vec![Test {
+                x: 10,
+                y: Some("test".to_string()),
+            },])
         );
     }
 

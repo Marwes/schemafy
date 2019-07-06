@@ -20,7 +20,7 @@ where
     {
         type Value = Vec<T>;
 
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             formatter.write_str("one or many")
         }
 

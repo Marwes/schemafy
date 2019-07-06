@@ -78,7 +78,7 @@ fn replace_invalid_identifier_chars(s: &str) -> String {
     s.replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
 }
 
-fn rename_keyword(prefix: &str, s: &str) -> Option<Tokens> {
+fn rename_keyword(prefix: &str, s: &str) -> Option<TokenStream> {
     let keywords = [
         "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
         "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",

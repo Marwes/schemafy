@@ -79,10 +79,14 @@ fn replace_invalid_identifier_chars(s: &str) -> String {
 }
 
 fn rename_keyword(prefix: &str, s: &str) -> Option<TokenStream> {
-    if ["type", "struct", "enum", "as"]
-        .iter()
-        .any(|&keyword| keyword == s)
-    {
+    let keywords = [
+        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
+        "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
+        "return", "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use",
+        "where", "while", "abstract", "become", "box", "do", "final", "macro", "override", "priv",
+        "typeof", "unsized", "virtual", "yield", "async", "await", "try",
+    ];
+    if keywords.iter().any(|&keyword| keyword == s) {
         let n = syn::Ident::new(&format!("{}_", s), Span::call_site());
         let prefix = syn::Ident::new(prefix, Span::call_site());
         Some(quote! {

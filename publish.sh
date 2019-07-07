@@ -1,3 +1,5 @@
 #!/bin/sh
-(cd schemafy_snapshot && cargo publish) &&
-    cargo release $@
+
+(./version.sh $@ &&
+    (cd schemafy_core && cargo publish) &&
+    cargo release $@)

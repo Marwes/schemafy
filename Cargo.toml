@@ -1,6 +1,6 @@
 [package]
 name = "schemafy"
-version = "0.4.5"
+version = "0.5.0" # VERSION_TAG
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -19,7 +19,7 @@ proc-macro = true
 [dependencies]
 proc-macro2 = "0.4"
 quote = "0.6"
-schemafy_core = { version = "0.4", path = "schemafy_core" }
+schemafy_core = { version = "0.5.0", path = "schemafy_core" } # VERSION_TAG
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"

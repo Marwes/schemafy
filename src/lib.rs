@@ -48,7 +48,6 @@
 //!     Ok(())
 //! }
 //! ```
-use schemafy_core;
 
 #[macro_use]
 extern crate serde_derive;

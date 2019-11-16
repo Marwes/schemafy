@@ -10,9 +10,18 @@ license = "MIT"
 repository = "https://github.com/Marwes/schemafy"
 documentation = "https://docs.rs/schemafy"
 
+default-run = "main"
+
 [lib]
 proc-macro = true
 
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[[bin]]
+name = "generate-tests"
+path = "src/generate_tests.rs"
 
 [workspace]
 

@@ -5,6 +5,7 @@ rust:
 - beta
 - stable
 script:
+- cargo run --bin generate-tests
 - cargo test --all
 env:
   global:

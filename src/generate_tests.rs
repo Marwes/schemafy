@@ -53,12 +53,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             test_file.push_str(&format!(
                 r#"
-mod {} {{
+mod _{}_{} {{
     #[allow(unused_imports)]
     use serde::{{Deserialize, Serialize}};
 
     schemafy::schemafy!(root: Schema "tests/test_suite/schemas/{}");
 "#,
+                i,
                 test_group.description.to_snake_case(),
                 schema_name
             ));
@@ -123,36 +124,37 @@ mod {} {{
 /// To allow for gradual progress, this function determines whether a
 /// test should be skipped.
 fn is_blacklisted(test_group: &str, index: usize) -> bool {
-    match test_group {
-        "additional_items" if index == 0 || index == 2 => true,
+    let blacklisted_indices: &[usize] = match test_group {
+        "additional_items" => &[0, 2],
+        "additional_properties" => &[0, 1, 2, 3, 5],
+        "all_of" => &[1, 2, 5, 6],
+        "any_of" => &[0, 1, 2, 4],
+        "definitions" => &[0, 1],
+        "dependencies" => &[0, 1, 2, 3],
+        "enum" => &[0, 1, 3, 4, 5, 6, 7],
+        "items" => &[0, 1, 2],
+        "max_items" => &[0],
+        "max_length" => &[0],
+        "max_properties" => &[0],
+        "maximum" => &[0, 1, 2],
+        "min_items" => &[0],
+        "min_length" => &[0],
+        "min_properties" => &[0],
+        "minimum" => &[0, 1, 2, 3],
+        "multiple_of" => &[0, 1, 2],
+        "not" => &[0, 1, 2, 3],
+        "one_of" => &[0, 1, 2, 3, 4],
+        "pattern" => &[0],
+        "pattern_properties" => &[0, 1, 2],
+        "properties" => &[0, 1, 2],
+        "ref" => &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        "ref_remote" => &[0, 1, 2, 3, 4, 5, 6],
+        "required" => &[0, 2],
+        "type" => &[6, 7, 9, 10],
+        "unique_items" => &[0, 1, 2],
 
-        "additional_properties"
-        | "all_of"
-        | "any_of"
-        | "definitions"
-        | "dependencies"
-        | "enum"
-        | "items"
-        | "max_items"
-        | "max_length"
-        | "max_properties"
-        | "maximum"
-        | "min_items"
-        | "min_length"
-        | "min_properties"
-        | "minimum"
-        | "multiple_of"
-        | "not"
-        | "one_of"
-        | "pattern"
-        | "pattern_properties"
-        | "properties"
-        | "ref"
-        | "ref_remote"
-        | "required"
-        | "type"
-        | "unique_items" => true,
+        _ => &[],
+    };
 
-        _ => false,
-    }
+    blacklisted_indices.contains(&index)
 }

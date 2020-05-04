@@ -64,6 +64,7 @@ extern crate proc_macro;
 mod schema;
 
 use std::borrow::Cow;
+use std::path::PathBuf;
 
 use inflector::Inflector;
 
@@ -629,9 +630,17 @@ impl<'a> GenerateBuilder<'a> {
         let def = syn::parse_macro_input!(tokens as Def);
         self.root_name = def.root;
 
-        let input_file = def.input_file.value();
-        let json = std::fs::read_to_string(&input_file)
-            .unwrap_or_else(|err| panic!("Unable to read `{}`: {}", input_file, err));
+        let input_file = PathBuf::from(def.input_file.value());
+        let crate_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+
+        let input_path = if input_file.is_relative() {
+            crate_root.join(input_file)
+        } else {
+            input_file
+        };
+
+        let json = std::fs::read_to_string(&input_path)
+            .unwrap_or_else(|err| panic!("Unable to read `{}`: {}", input_path.to_string_lossy(), err));
 
         let schema = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err));
         let mut expander = Expander::new(

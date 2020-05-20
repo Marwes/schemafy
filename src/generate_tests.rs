@@ -68,10 +68,7 @@ mod _{}_{} {{
                     // Prefix the name with an underscore if it starts
                     // with a number.
                     let root = test.description.to_snake_case();
-                    let prefix = match root.chars().next().unwrap().is_numeric() {
-                        true => "_",
-                        false => "",
-                    };
+                    let prefix = if root.chars().next().unwrap().is_numeric() { "_" } else { "" };
                     format!("{}{}", prefix, root)
                 };
 
@@ -79,9 +76,10 @@ mod _{}_{} {{
                 // gives better error messages than simply asserting
                 // on .is_ok(). For the negative test cases, a simple
                 // assert is the best we can do.
-                let assertion = match test.valid {
-                    true => "let _: Schema = serde_json::from_str(&data).unwrap();",
-                    false => "assert!(serde_json::from_str::<Schema>(&data).is_err());",
+                let assertion = if test.valid {
+                    "let _: Schema = serde_json::from_str(&data).unwrap();"
+                } else {
+                    "assert!(serde_json::from_str::<Schema>(&data).is_err());"
                 };
 
                 test_file.push_str(&format!(

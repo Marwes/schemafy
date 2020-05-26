@@ -1,12 +1,10 @@
-use schemafy_core;
-
 use serde_json;
 
 use serde_derive::{Deserialize, Serialize};
 
 schemafy::schemafy!(
     root: Schema
-    "src/schema.json"
+    "schemafy_lib/src/schema.json"
 );
 
 fn schema_exists(schema: Option<&Schema>) {

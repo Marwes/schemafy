@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "internal-regenerate")]
 schemafy::regenerate!(
     root: Schema
-    "src/schema.json"
+    "schemafy_lib/src/schema.json"
 );
 
 fn main() {}

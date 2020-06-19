@@ -117,14 +117,24 @@ impl<'a> GenerateBuilder<'a> {
             input_file
         };
 
-        let json = std::fs::read_to_string(&input_path)
-            .unwrap_or_else(|err| panic!("Unable to read `{}`: {}", input_path.to_string_lossy(), err));
+        let input_dir = input_path
+            .parent()
+            .expect(&format!(
+                "Could not detect directory of file: {}",
+                def.input_file.value()
+            ))
+            .to_owned();
+
+        let json = std::fs::read_to_string(&input_path).unwrap_or_else(|err| {
+            panic!("Unable to read `{}`: {}", input_path.to_string_lossy(), err)
+        });
 
         let schema = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err));
         let mut expander = Expander::new(
             self.root_name.as_ref().map(|s| &**s),
             self.schemafy_path,
             &schema,
+            input_dir,
         );
         expander.expand(&schema).into()
     }

@@ -33,6 +33,7 @@
 //!
 //! use serde::{Serialize, Deserialize};
 //! use schemafy_lib::Expander;
+//! use std::path::PathBuf;
 //!
 //! let json = std::fs::read_to_string("src/schema.json").expect("Read schema JSON file");
 //!
@@ -41,6 +42,7 @@
 //!     Some("Schema"),
 //!     "::schemafy_core::",
 //!     &schema,
+//!     PathBuf::from("src")
 //! );
 //!
 //! let code = expander.expand(&schema);
@@ -57,8 +59,6 @@ extern crate quote;
 /// This module is itself generated from a JSON schema.
 mod schema;
 
-use std::borrow::Cow;
-
 use inflector::Inflector;
 
 use serde_json::Value;
@@ -66,6 +66,9 @@ use serde_json::Value;
 pub use schema::{Schema, SimpleTypes};
 
 use proc_macro2::{Span, TokenStream};
+
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 fn replace_invalid_identifier_chars(s: &str) -> String {
     s.replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
@@ -223,6 +226,14 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
                     .iter()
                     .flat_map(|a| a.iter())
                     .any(|req| req == field_name);
+                // if the schema of the field is a reference, then expand it and add it to the
+                // current Schema's types
+                if let Some(_) = value.ref_ {
+                    self.expander.schema(value);
+                }
+                value.items.iter().for_each(|i| {
+                    self.expander.schema(i);
+                });
                 let field_type = self.expander.expand_type(type_name, required, value);
                 if !field_type.typ.starts_with("Option<") {
                     self.default = false;
@@ -267,6 +278,8 @@ pub struct Expander<'r> {
     current_type: String,
     current_field: String,
     types: Vec<(String, TokenStream)>,
+    schema_directory: PathBuf,
+    resolved_schemas: HashMap<PathBuf, Schema>,
 }
 
 struct FieldType {
@@ -289,7 +302,12 @@ where
 }
 
 impl<'r> Expander<'r> {
-    pub fn new(root_name: Option<&'r str>, schemafy_path: &'r str, root: &'r Schema) -> Expander<'r> {
+    pub fn new(
+        root_name: Option<&'r str>,
+        schemafy_path: &'r str,
+        root: &'r Schema,
+        schema_directory: PathBuf,
+    ) -> Expander<'r> {
         Expander {
             root_name,
             root,
@@ -297,22 +315,27 @@ impl<'r> Expander<'r> {
             current_field: "".into(),
             current_type: "".into(),
             types: Vec::new(),
+            schema_directory,
+            resolved_schemas: HashMap::new(),
         }
     }
 
-    fn type_ref(&self, s: &str) -> String {
+    fn type_ref(&mut self, s: &str) -> String {
+        let as_path = PathBuf::from(s);
         let s = if s == "#" {
             self.root_name.expect("No root name specified for schema")
+        } else if self.is_resolved_ref_path(&as_path) {
+            Self::type_from_json_file(&as_path)
         } else {
             s.split('/').last().expect("Component")
         };
         replace_invalid_identifier_chars(&s.to_pascal_case())
     }
 
-    fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {
+    fn schema(&mut self, schema: &Schema) -> Schema {
         let schema = match schema.ref_ {
             Some(ref ref_) => self.schema_ref(ref_),
-            None => schema,
+            None => schema.clone(),
         };
         match schema.all_of {
             Some(ref all_of) if !all_of.is_empty() => {
@@ -320,18 +343,46 @@ impl<'r> Expander<'r> {
                     .iter()
                     .skip(1)
                     .fold(self.schema(&all_of[0]).clone(), |mut result, def| {
-                        merge_all_of(result.to_mut(), &self.schema(def));
+                        merge_all_of(&mut result, &self.schema(def));
                         result
                     })
             }
-            _ => Cow::Borrowed(schema),
+            _ => schema.clone(),
         }
     }
 
-    fn schema_ref(&self, s: &str) -> &'r Schema {
-        s.split('/').fold(self.root, |schema, comp| {
+    fn schema_ref(&mut self, s: &str) -> Schema {
+        let (schema, ref_lookup) = if s.contains(".json") {
+            // Format referenced.json#/definitions/ExternalType
+            let path_split_from_rest: Vec<&str> = s.split('#').collect::<Vec<&str>>();
+            let (ref_path, maybe_inner_lookup) = {
+                let path_str = path_split_from_rest[0];
+                let ref_file = PathBuf::from(path_str);
+                let ref_path = if ref_file.is_relative() {
+                    self.schema_directory.join(ref_file)
+                } else {
+                    ref_file
+                };
+                (
+                    ref_path,
+                    path_split_from_rest
+                        .get(1)
+                        .map(|s| s.trim_start_matches('/')),
+                )
+            };
+            let resolved_schema = self.expand_file_schema_ref(&ref_path);
+            if let Some(inner_ref_lookup) = maybe_inner_lookup {
+                (resolved_schema, inner_ref_lookup)
+            } else {
+                return resolved_schema;
+            }
+        } else {
+            (self.root.clone(), s)
+        };
+
+        ref_lookup.split('/').fold(schema, |schema, comp: &str| {
             if comp == "#" {
-                self.root
+                self.root.clone()
             } else if comp == "definitions" {
                 schema
             } else {
@@ -339,6 +390,7 @@ impl<'r> Expander<'r> {
                     .definitions
                     .get(comp)
                     .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp))
+                    .clone()
             }
         })
     }
@@ -435,7 +487,8 @@ impl<'r> Expander<'r> {
                         self.current_type = format!("{}Item", self.current_type);
                         self.expand_type_(item).typ
                     });
-                    format!("Vec<{}>", item_type).into()
+                    let r = format!("Vec<{}>", item_type).into();
+                    r
                 }
                 _ => "serde_json::Value".into(),
             }
@@ -474,6 +527,7 @@ impl<'r> Expander<'r> {
             let fields = field_expander.expand_fields(original_name, schema);
             (fields, field_expander.default)
         };
+
         let name = syn::Ident::new(&pascal_case_name, Span::call_site());
         let is_struct =
             !fields.is_empty() || schema.additional_properties == Some(Value::Bool(false));
@@ -486,12 +540,14 @@ impl<'r> Expander<'r> {
                     }
                 }
             } else {
-                quote! {
+                let r = quote! {
                     #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
                     pub struct #name {
                         #(#fields),*
                     }
-                }
+                };
+
+                r
             }
         } else if schema.enum_.as_ref().map_or(false, |e| !e.is_empty()) {
             let mut optional = false;
@@ -552,6 +608,7 @@ impl<'r> Expander<'r> {
                 pub type #name = #typ;
             };
         };
+
         if name == original_name {
             type_decl
         } else {
@@ -560,6 +617,67 @@ impl<'r> Expander<'r> {
                 #type_decl
             }
         }
+    }
+
+    fn expand_file_schema_ref(&mut self, abs_file_path: &PathBuf) -> Schema {
+        if let Some(existing) = self.resolved_schemas.get(abs_file_path) {
+            return existing.clone();
+        } else {
+            // Resolve the referenced file Schema.
+            let json = std::fs::read_to_string(abs_file_path)
+                .unwrap_or_else(|err| panic!("Unable to read `{:#?}`: {}", abs_file_path, err));
+            let loaded_schema: Schema = serde_json::from_str(&json).expect("JSON parse error");
+            let type_name_from_file = Some(Self::type_from_json_file(abs_file_path));
+            let mut reffed_file_expander = Expander {
+                root_name: type_name_from_file,
+                schemafy_path: self.schemafy_path,
+                root: &loaded_schema,
+                current_field: "".into(),
+                current_type: "".into(),
+                types: self.types.clone(),
+                schema_directory: abs_file_path
+                    .parent()
+                    .expect(&format!(
+                        "Could not detect directory of file: {:#?}",
+                        abs_file_path.as_os_str()
+                    ))
+                    .to_owned(),
+                resolved_schemas: self.resolved_schemas.clone(),
+            };
+            reffed_file_expander.expand_root();
+            // Merge data from the reffed file Expander to reduce lookups
+            self.types.append(&mut reffed_file_expander.types);
+            self.resolved_schemas
+                .insert(abs_file_path.clone(), loaded_schema.clone());
+            for (resolved_schema_path, resolved_schema) in
+                reffed_file_expander.resolved_schemas.into_iter()
+            {
+                self.resolved_schemas
+                    .insert(resolved_schema_path, resolved_schema);
+            }
+            loaded_schema
+        }
+    }
+
+    fn to_absolute_path(&self, s: &PathBuf) -> PathBuf {
+        if s.is_relative() {
+            self.schema_directory.join(s)
+        } else {
+            s.clone()
+        }
+    }
+
+    fn type_from_json_file(p: &PathBuf) -> &str {
+        p.file_name()
+            .and_then(|f| f.to_str())
+            .map(|f| f.trim_end_matches(".json"))
+            .expect(&format!("No file name for [{:#?}]", p.as_os_str()))
+    }
+
+    fn is_resolved_ref_path(&self, p: &PathBuf) -> bool {
+        self.resolved_schemas
+            .get(&self.to_absolute_path(p))
+            .is_some()
     }
 
     pub fn expand(&mut self, schema: &Schema) -> TokenStream {
@@ -571,7 +689,23 @@ impl<'r> Expander<'r> {
             None => self.expand_definitions(schema),
         }
 
-        let types = self.types.iter().map(|t| &t.1);
+        // Dedupe because we may have visited the same file multiple times when de-referencing
+        // external files
+        let mut deduped_type_defs = HashMap::new();
+        for (name, next) in &self.types {
+            if let Some(existing) = deduped_type_defs.insert(name, next) {
+                let existing_as_string = format!("{}", existing);
+                let next_as_string = format!("{}", next);
+                if existing_as_string != next_as_string {
+                    panic!(
+                        "Found two different definitions for {}: [{}] and [{}]",
+                        name, existing_as_string, next_as_string
+                    );
+                }
+            };
+        }
+
+        let types = deduped_type_defs.iter().map(|t| *t.1);
 
         quote! {
             #( #types )*

@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "nested-ref-type",
+  "type": "object",
+  "required": [
+    "title",
+    "person"
+  ],
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "person": {
+      "$ref": "../reffing-reffed-type.json"
+    }
+  }
+}

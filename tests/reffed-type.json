@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "reffed-type",
+  "type": "object",
+  "required": [
+    "name"
+  ],
+  "definitions": {
+    "address": {
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "properties": {
+    "name": {
+      "type": "string"
+    }
+  }
+}

@@ -83,3 +83,28 @@ fn root_array() {
     let a = RootArray::default();
     let _: Option<&RootArrayItem> = a.get(0);
 }
+
+schemafy::schemafy!(
+    root: ReffingType
+    "tests/reffing-type.json"
+);
+
+#[test]
+fn reffing_type() {
+    let os: Option<ReffingType> = None;
+    if let Some(os) = os {
+        // reffed array type
+        let _: String = os.values[0].name;
+        // reffed type
+        let _: String = os.address.value;
+        let _: String = os.person.name;
+        // double reffed field
+        let _: String = os.person.address.value;
+        let _: i64 = os.person.age;
+        // nested type
+        let _: String = os.nested.title;
+        // nested double ref field
+        let _: String = os.nested.person.address.value;
+        let _: i64 = os.nested.person.age;
+    }
+}

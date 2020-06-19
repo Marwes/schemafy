@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "reffing-reffed-type",
+  "type": "object",
+  "required": [
+    "name",
+    "address",
+    "age"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "address": {
+      "$ref": "reffed-type.json#/definitions/address"
+    },
+    "age": {
+      "type": "integer"
+    }
+  }
+}

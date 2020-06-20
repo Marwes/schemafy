@@ -68,7 +68,7 @@ pub use schema::{Schema, SimpleTypes};
 use proc_macro2::{Span, TokenStream};
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 
 fn replace_invalid_identifier_chars(s: &str) -> String {
     s.replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
@@ -619,7 +619,7 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn expand_file_schema_ref(&mut self, abs_file_path: &PathBuf) -> Schema {
+    fn expand_file_schema_ref(&mut self, abs_file_path: &Path) -> Schema {
         if let Some(existing) = self.resolved_schemas.get(abs_file_path) {
             return existing.clone();
         } else {
@@ -648,7 +648,7 @@ impl<'r> Expander<'r> {
             // Merge data from the reffed file Expander to reduce lookups
             self.types.append(&mut reffed_file_expander.types);
             self.resolved_schemas
-                .insert(abs_file_path.clone(), loaded_schema.clone());
+                .insert(abs_file_path.to_owned(), loaded_schema.clone());
             for (resolved_schema_path, resolved_schema) in
                 reffed_file_expander.resolved_schemas.into_iter()
             {
@@ -659,22 +659,22 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn to_absolute_path(&self, s: &PathBuf) -> PathBuf {
+    fn to_absolute_path(&self, s: &Path) -> PathBuf {
         if s.is_relative() {
             self.schema_directory.join(s)
         } else {
-            s.clone()
+            s.to_owned()
         }
     }
 
-    fn type_from_json_file(p: &PathBuf) -> &str {
+    fn type_from_json_file(p: &Path) -> &str {
         p.file_name()
             .and_then(|f| f.to_str())
             .map(|f| f.trim_end_matches(".json"))
             .expect(&format!("No file name for [{:#?}]", p.as_os_str()))
     }
 
-    fn is_resolved_ref_path(&self, p: &PathBuf) -> bool {
+    fn is_resolved_ref_path(&self, p: &Path) -> bool {
         self.resolved_schemas
             .get(&self.to_absolute_path(p))
             .is_some()

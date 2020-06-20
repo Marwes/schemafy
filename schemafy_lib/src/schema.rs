@@ -1,6 +1,6 @@
 pub type PositiveInteger = i64;
 pub type PositiveIntegerDefault0 = serde_json::Value;
-pub type SchemaArray = Vec<Schema>;
+pub type SchemaArray = Vec<::std::rc::Rc<Schema>>;
 #[serde(rename = "simpleTypes")]
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub enum SimpleTypes {
@@ -36,7 +36,7 @@ pub struct Schema {
     pub any_of: Option<SchemaArray>,
     pub default: Option<serde_json::Value>,
     #[serde(default)]
-    pub definitions: ::std::collections::BTreeMap<String, Schema>,
+    pub definitions: ::std::collections::BTreeMap<String, ::std::rc::Rc<Schema>>,
     pub dependencies: Option<::std::collections::BTreeMap<String, serde_json::Value>>,
     pub description: Option<String>,
     #[serde(rename = "enum")]
@@ -48,7 +48,7 @@ pub struct Schema {
     pub id: Option<String>,
     #[serde(default)]
     #[serde(with = "::schemafy_core::one_or_many")]
-    pub items: Vec<Schema>,
+    pub items: Vec<::std::rc::Rc<Schema>>,
     #[serde(rename = "maxItems")]
     pub max_items: Option<PositiveInteger>,
     #[serde(rename = "maxLength")]
@@ -65,15 +65,15 @@ pub struct Schema {
     pub minimum: Option<f64>,
     #[serde(rename = "multipleOf")]
     pub multiple_of: Option<f64>,
-    pub not: Option<Box<Schema>>,
+    pub not: Option<::std::rc::Rc<Schema>>,
     #[serde(rename = "oneOf")]
     pub one_of: Option<SchemaArray>,
     pub pattern: Option<String>,
     #[serde(default)]
     #[serde(rename = "patternProperties")]
-    pub pattern_properties: ::std::collections::BTreeMap<String, Schema>,
+    pub pattern_properties: ::std::collections::BTreeMap<String, ::std::rc::Rc<Schema>>,
     #[serde(default)]
-    pub properties: ::std::collections::BTreeMap<String, Schema>,
+    pub properties: ::std::collections::BTreeMap<String, ::std::rc::Rc<Schema>>,
     pub required: Option<StringArray>,
     pub title: Option<String>,
     #[serde(default)]

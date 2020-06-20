@@ -51,7 +51,8 @@
 
 use std::path::PathBuf;
 
-use schemafy_lib::Expander;
+use schemafy_lib::{Expander, Schema};
+use std::rc::Rc;
 
 /// A configurable builder for generating Rust types from a JSON
 /// schema.
@@ -68,6 +69,9 @@ struct GenerateBuilder<'a> {
     /// re-exported this crate or imported it under a different name,
     /// the default should be fine.
     pub schemafy_path: &'a str,
+
+    /// Optional function for manipulating types ad-hoc
+    type_replacer: Option<Box<dyn Fn(&str) -> Option<String>>>,
 }
 
 impl<'a> Default for GenerateBuilder<'a> {
@@ -75,6 +79,7 @@ impl<'a> Default for GenerateBuilder<'a> {
         GenerateBuilder {
             root_name: None,
             schemafy_path: "::schemafy_core::",
+            type_replacer: None,
         }
     }
 }
@@ -129,14 +134,16 @@ impl<'a> GenerateBuilder<'a> {
             panic!("Unable to read `{}`: {}", input_path.to_string_lossy(), err)
         });
 
-        let schema = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err));
+        let schema: Rc<Schema> =
+            Rc::new(serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err)));
         let mut expander = Expander::new(
             self.root_name.as_ref().map(|s| &**s),
             self.schemafy_path,
-            &schema,
+            Rc::clone(&schema),
             input_dir,
+            &self.type_replacer,
         );
-        expander.expand(&schema).into()
+        expander.expand(schema).into()
     }
 }
 
@@ -176,10 +183,18 @@ pub fn schemafy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn regenerate(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     use std::process::Command;
 
-    let tokens = GenerateBuilder {
+    let mut gen_builder = GenerateBuilder {
         ..GenerateBuilder::default()
-    }
-    .build_tokens(tokens);
+    };
+    gen_builder.type_replacer = Some(Box::new(|typ| {
+        if typ == "Schema" {
+            Some(format!("::std::rc::Rc<{}>", typ))
+        } else {
+            None
+        }
+    }));
+
+    let tokens = gen_builder.build_tokens(tokens);
 
     {
         let out = tokens.to_string();

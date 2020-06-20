@@ -34,18 +34,20 @@
 //! use serde::{Serialize, Deserialize};
 //! use schemafy_lib::Expander;
 //! use std::path::PathBuf;
+//! use std::rc::Rc;
 //!
 //! let json = std::fs::read_to_string("src/schema.json").expect("Read schema JSON file");
 //!
-//! let schema = serde_json::from_str(&json).unwrap();
+//! let schema =  Rc::new(serde_json::from_str(&json).unwrap());
 //! let mut expander = Expander::new(
 //!     Some("Schema"),
 //!     "::schemafy_core::",
-//!     &schema,
-//!     PathBuf::from("src")
+//!     Rc::clone(&schema),
+//!     PathBuf::from("src"),
+//!     &None
 //! );
 //!
-//! let code = expander.expand(&schema);
+//! let code = expander.expand(schema);
 //! ```
 
 #[macro_use]
@@ -68,7 +70,8 @@ pub use schema::{Schema, SimpleTypes};
 use proc_macro2::{Span, TokenStream};
 
 use std::collections::HashMap;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 fn replace_invalid_identifier_chars(s: &str) -> String {
     s.replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
@@ -146,9 +149,13 @@ fn merge_all_of(result: &mut Schema, r: &Schema) {
     for (k, v) in &r.properties {
         match result.properties.entry(k.clone()) {
             Entry::Vacant(entry) => {
-                entry.insert(v.clone());
+                entry.insert(Rc::clone(v));
             }
-            Entry::Occupied(mut entry) => merge_all_of(entry.get_mut(), v),
+            Entry::Occupied(mut entry) => {
+                let mut to_merge = (**entry.get()).clone();
+                merge_all_of(&mut to_merge, v);
+                *entry.get_mut() = Rc::new(to_merge);
+            }
         }
     }
 
@@ -213,7 +220,7 @@ struct FieldExpander<'a, 'r: 'a> {
 }
 
 impl<'a, 'r> FieldExpander<'a, 'r> {
-    fn expand_fields(&mut self, type_name: &str, schema: &Schema) -> Vec<TokenStream> {
+    fn expand_fields(&mut self, type_name: &str, schema: Rc<Schema>) -> Vec<TokenStream> {
         let schema = self.expander.schema(schema);
         schema
             .properties
@@ -229,12 +236,14 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
                 // if the schema of the field is a reference, then expand it and add it to the
                 // current Schema's types
                 if let Some(_) = value.ref_ {
-                    self.expander.schema(value);
+                    self.expander.schema(Rc::clone(value));
                 }
                 value.items.iter().for_each(|i| {
-                    self.expander.schema(i);
+                    self.expander.schema(Rc::clone(i));
                 });
-                let field_type = self.expander.expand_type(type_name, required, value);
+                let field_type = self
+                    .expander
+                    .expand_type(type_name, required, Rc::clone(value));
                 if !field_type.typ.starts_with("Option<") {
                     self.default = false;
                 }
@@ -274,12 +283,13 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
 pub struct Expander<'r> {
     root_name: Option<&'r str>,
     schemafy_path: &'r str,
-    root: &'r Schema,
+    root: Rc<Schema>,
     current_type: String,
     current_field: String,
     types: HashMap<String, TokenStream>,
     schema_directory: PathBuf,
-    resolved_schemas: HashMap<PathBuf, Schema>,
+    resolved_schemas: HashMap<PathBuf, Rc<Schema>>,
+    type_replacer: &'r Option<Box<dyn Fn(&str) -> Option<String>>>,
 }
 
 struct FieldType {
@@ -305,8 +315,9 @@ impl<'r> Expander<'r> {
     pub fn new(
         root_name: Option<&'r str>,
         schemafy_path: &'r str,
-        root: &'r Schema,
+        root: Rc<Schema>,
         schema_directory: PathBuf,
+        type_replacer: &'r Option<Box<dyn Fn(&str) -> Option<String>>>,
     ) -> Expander<'r> {
         Expander {
             root_name,
@@ -317,6 +328,7 @@ impl<'r> Expander<'r> {
             types: HashMap::new(),
             schema_directory,
             resolved_schemas: HashMap::new(),
+            type_replacer,
         }
     }
 
@@ -332,26 +344,27 @@ impl<'r> Expander<'r> {
         replace_invalid_identifier_chars(&s.to_pascal_case())
     }
 
-    fn schema(&mut self, schema: &Schema) -> Schema {
+    fn schema(&mut self, schema: Rc<Schema>) -> Rc<Schema> {
         let schema = match schema.ref_ {
             Some(ref ref_) => self.schema_ref(ref_),
-            None => schema.clone(),
+            None => schema,
         };
         match schema.all_of {
             Some(ref all_of) if !all_of.is_empty() => {
                 all_of
                     .iter()
                     .skip(1)
-                    .fold(self.schema(&all_of[0]).clone(), |mut result, def| {
-                        merge_all_of(&mut result, &self.schema(def));
-                        result
+                    .fold(self.schema(Rc::clone(&all_of[0])), |result, def| {
+                        let mut use_for_merge = (*result).clone();
+                        merge_all_of(&mut use_for_merge, &self.schema(Rc::clone(def)));
+                        Rc::new(use_for_merge)
                     })
             }
-            _ => schema.clone(),
+            _ => schema,
         }
     }
 
-    fn schema_ref(&mut self, s: &str) -> Schema {
+    fn schema_ref(&mut self, s: &str) -> Rc<Schema> {
         let (schema, ref_lookup) = if s.contains(".json") {
             // Format referenced.json#/definitions/ExternalType
             let path_split_from_rest: Vec<&str> = s.split('#').collect::<Vec<&str>>();
@@ -375,25 +388,26 @@ impl<'r> Expander<'r> {
                 return resolved_schema;
             }
         } else {
-            (self.root.clone(), s)
+            (Rc::clone(&self.root), s)
         };
 
         ref_lookup.split('/').fold(schema, |schema, comp: &str| {
             if comp == "#" {
-                self.root.clone()
+                Rc::clone(&self.root)
             } else if comp == "definitions" {
                 schema
             } else {
-                schema
-                    .definitions
-                    .get(comp)
-                    .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp))
-                    .clone()
+                Rc::clone(
+                    schema
+                        .definitions
+                        .get(comp)
+                        .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp)),
+                )
             }
         })
     }
 
-    fn expand_type(&mut self, type_name: &str, required: bool, typ: &Schema) -> FieldType {
+    fn expand_type(&mut self, type_name: &str, required: bool, typ: Rc<Schema>) -> FieldType {
         let mut result = self.expand_type_(typ);
         if type_name == result.typ {
             result.typ = format!("Box<{}>", result.typ)
@@ -404,18 +418,18 @@ impl<'r> Expander<'r> {
         result
     }
 
-    fn expand_type_(&mut self, typ: &Schema) -> FieldType {
-        if let Some(ref ref_) = typ.ref_ {
+    fn expand_type_(&mut self, typ: Rc<Schema>) -> FieldType {
+        let mut r = if let Some(ref ref_) = typ.ref_ {
             self.type_ref(ref_).into()
         } else if typ.any_of.as_ref().map_or(false, |a| a.len() == 2) {
             let any_of = typ.any_of.as_ref().unwrap();
-            let simple = self.schema(&any_of[0]);
-            let array = self.schema(&any_of[1]);
+            let simple = self.schema(Rc::clone(&any_of[0]));
+            let array = self.schema(Rc::clone(&any_of[1]));
             if !array.type_.is_empty() {
                 if let SimpleTypes::Array = array.type_[0] {
-                    if simple == self.schema(&array.items[0]) {
+                    if simple == self.schema(Rc::clone(&array.items[0])) {
                         return FieldType {
-                            typ: format!("Vec<{}>", self.expand_type_(&any_of[0]).typ),
+                            typ: format!("Vec<{}>", self.expand_type_(Rc::clone(&any_of[0])).typ),
                             attributes: vec![format!(
                                 r#"with="{}one_or_many""#,
                                 self.schemafy_path
@@ -428,11 +442,11 @@ impl<'r> Expander<'r> {
             return "serde_json::Value".into();
         } else if typ.type_.len() == 2 {
             if typ.type_[0] == SimpleTypes::Null || typ.type_[1] == SimpleTypes::Null {
-                let mut ty = typ.clone();
+                let mut ty = (*typ).clone();
                 ty.type_.retain(|x| *x != SimpleTypes::Null);
 
                 FieldType {
-                    typ: format!("Option<{}>", self.expand_type_(&ty).typ),
+                    typ: format!("Option<{}>", self.expand_type_(Rc::new(ty)).typ),
                     attributes: vec![],
                     default: true,
                 }
@@ -468,8 +482,8 @@ impl<'r> Expander<'r> {
                 SimpleTypes::Object => {
                     let prop = match typ.additional_properties {
                         Some(ref props) if props.is_object() => {
-                            let prop = serde_json::from_value(props.clone()).unwrap();
-                            self.expand_type_(&prop).typ
+                            let prop = Rc::new(serde_json::from_value(props.clone()).unwrap());
+                            self.expand_type_(prop).typ
                         }
                         _ => "serde_json::Value".into(),
                     };
@@ -483,7 +497,7 @@ impl<'r> Expander<'r> {
                 SimpleTypes::Array => {
                     let item_type = typ.items.get(0).map_or("serde_json::Value".into(), |item| {
                         self.current_type = format!("{}Item", self.current_type);
-                        self.expand_type_(item).typ
+                        self.expand_type_(Rc::clone(&item)).typ
                     });
                     let r = format!("Vec<{}>", item_type).into();
                     r
@@ -492,12 +506,20 @@ impl<'r> Expander<'r> {
             }
         } else {
             "serde_json::Value".into()
+        };
+
+        if let Some(type_replacer) = &self.type_replacer {
+            if let Some(replacement_type) = type_replacer(&r.typ) {
+                r.typ = replacement_type;
+            }
         }
+
+        r
     }
 
-    fn expand_definitions(&mut self, schema: &Schema) {
+    fn expand_definitions(&mut self, schema: Rc<Schema>) {
         for (name, def) in &schema.definitions {
-            let type_decl = self.expand_schema(name, def);
+            let type_decl = self.expand_schema(name, Rc::clone(def));
             let definition_tokens = match def.description {
                 Some(ref comment) => {
                     let t = make_doc_comment(comment, LINE_LENGTH);
@@ -512,8 +534,8 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn expand_schema(&mut self, original_name: &str, schema: &Schema) -> TokenStream {
-        self.expand_definitions(schema);
+    fn expand_schema(&mut self, original_name: &str, schema: Rc<Schema>) -> TokenStream {
+        self.expand_definitions(Rc::clone(&schema));
 
         let pascal_case_name = replace_invalid_identifier_chars(&original_name.to_pascal_case());
         self.current_type.clone_from(&pascal_case_name);
@@ -522,7 +544,7 @@ impl<'r> Expander<'r> {
                 default: true,
                 expander: self,
             };
-            let fields = field_expander.expand_fields(original_name, schema);
+            let fields = field_expander.expand_fields(original_name, Rc::clone(&schema));
             (fields, field_expander.default)
         };
 
@@ -617,20 +639,21 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn expand_file_schema_ref(&mut self, canonical_file_path: &Path) -> Schema {
+    fn expand_file_schema_ref(&mut self, canonical_file_path: &Path) -> Rc<Schema> {
         if let Some(existing) = self.resolved_schemas.get(canonical_file_path) {
-            return existing.clone();
+            return Rc::clone(existing);
         } else {
             // Resolve the referenced file Schema.
             let json = std::fs::read_to_string(canonical_file_path).unwrap_or_else(|err| {
                 panic!("Unable to read `{:#?}`: {}", canonical_file_path, err)
             });
-            let loaded_schema: Schema = serde_json::from_str(&json).expect("JSON parse error");
+            let loaded_schema: Rc<Schema> =
+                Rc::new(serde_json::from_str(&json).expect("JSON parse error"));
             let type_name_from_file = Some(Self::type_from_json_file(canonical_file_path));
             let mut reffed_file_expander = Expander {
                 root_name: type_name_from_file,
                 schemafy_path: self.schemafy_path,
-                root: &loaded_schema,
+                root: Rc::clone(&loaded_schema),
                 current_field: "".into(),
                 current_type: "".into(),
                 types: self.types.clone(),
@@ -642,6 +665,7 @@ impl<'r> Expander<'r> {
                     ))
                     .to_owned(),
                 resolved_schemas: self.resolved_schemas.clone(),
+                type_replacer: self.type_replacer,
             };
             reffed_file_expander.expand_root();
             // Merge data from the reffed file Expander to reduce lookups
@@ -651,7 +675,7 @@ impl<'r> Expander<'r> {
                 }
             }
             self.resolved_schemas
-                .insert(canonical_file_path.to_owned(), loaded_schema.clone());
+                .insert(canonical_file_path.to_owned(), Rc::clone(&loaded_schema));
             for (resolved_schema_path, resolved_schema) in
             reffed_file_expander.resolved_schemas.into_iter()
             {
@@ -686,7 +710,7 @@ impl<'r> Expander<'r> {
         }
     }
 
-    pub fn expand(&mut self, schema: &Schema) -> TokenStream {
+    pub fn expand(&mut self, schema: Rc<Schema>) -> TokenStream {
         match self.root_name {
             Some(name) => {
                 let schema = self.expand_schema(name, schema);
@@ -705,7 +729,7 @@ impl<'r> Expander<'r> {
     }
 
     pub fn expand_root(&mut self) -> TokenStream {
-        self.expand(self.root)
+        self.expand(Rc::clone(&self.root))
     }
 
     fn insert_type(&mut self, name: String, type_def: TokenStream) {

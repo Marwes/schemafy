@@ -34,18 +34,20 @@
 //! use serde::{Serialize, Deserialize};
 //! use schemafy_lib::Expander;
 //! use std::path::PathBuf;
+//! use std::rc::Rc;
+//! use std::cell::RefCell;
 //!
 //! let json = std::fs::read_to_string("src/schema.json").expect("Read schema JSON file");
 //!
-//! let schema = serde_json::from_str(&json).unwrap();
+//! let schema = Rc::new(RefCell::new(serde_json::from_str(&json).unwrap()));
 //! let mut expander = Expander::new(
 //!     Some("Schema"),
 //!     "::schemafy_core::",
-//!     &schema,
+//!     schema.clone(),
 //!     PathBuf::from("src")
 //! );
 //!
-//! let code = expander.expand(&schema);
+//! let code = expander.expand(&schema.borrow());
 //! ```
 
 #[macro_use]
@@ -67,8 +69,10 @@ pub use schema::{Schema, SimpleTypes};
 
 use proc_macro2::{Span, TokenStream};
 
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 fn replace_invalid_identifier_chars(s: &str) -> String {
     s.replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
@@ -215,13 +219,14 @@ struct FieldExpander<'a, 'r: 'a> {
 impl<'a, 'r> FieldExpander<'a, 'r> {
     fn expand_fields(&mut self, type_name: &str, schema: &Schema) -> Vec<TokenStream> {
         let schema = self.expander.schema(schema);
-        schema
+        let schema_ref = &schema.borrow();
+        schema_ref
             .properties
             .iter()
             .map(|(field_name, value)| {
                 self.expander.current_field.clone_from(field_name);
                 let key = field(field_name);
-                let required = schema
+                let required = schema_ref
                     .required
                     .iter()
                     .flat_map(|a| a.iter())
@@ -274,12 +279,12 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
 pub struct Expander<'r> {
     root_name: Option<&'r str>,
     schemafy_path: &'r str,
-    root: &'r Schema,
+    root: Rc<RefCell<Schema>>,
     current_type: String,
     current_field: String,
     types: HashMap<String, TokenStream>,
     schema_directory: PathBuf,
-    resolved_schemas: HashMap<PathBuf, Schema>,
+    resolved_schemas: HashMap<PathBuf, Rc<RefCell<Schema>>>,
 }
 
 struct FieldType {
@@ -305,7 +310,7 @@ impl<'r> Expander<'r> {
     pub fn new(
         root_name: Option<&'r str>,
         schemafy_path: &'r str,
-        root: &'r Schema,
+        root: Rc<RefCell<Schema>>,
         schema_directory: PathBuf,
     ) -> Expander<'r> {
         Expander {
@@ -332,26 +337,28 @@ impl<'r> Expander<'r> {
         replace_invalid_identifier_chars(&s.to_pascal_case())
     }
 
-    fn schema(&mut self, schema: &Schema) -> Schema {
+    fn schema(&mut self, schema: &Schema) -> Rc<RefCell<Schema>> {
         let schema = match schema.ref_ {
             Some(ref ref_) => self.schema_ref(ref_),
-            None => schema.clone(),
+            None => Rc::new(RefCell::new(schema.clone())),
         };
-        match schema.all_of {
+        let schema_ref: &Schema = &schema.borrow();
+        match schema_ref.all_of {
             Some(ref all_of) if !all_of.is_empty() => {
                 all_of
                     .iter()
                     .skip(1)
-                    .fold(self.schema(&all_of[0]).clone(), |mut result, def| {
-                        merge_all_of(&mut result, &self.schema(def));
-                        result
+                    .fold(self.schema(&all_of[0]), |acc, def| {
+                        let inner = acc.as_ref();
+                        merge_all_of(&mut inner.borrow_mut(), &self.schema(def).borrow());
+                        acc
                     })
             }
             _ => schema.clone(),
         }
     }
 
-    fn schema_ref(&mut self, s: &str) -> Schema {
+    fn schema_ref(&mut self, s: &str) -> Rc<RefCell<Schema>> {
         let (schema, ref_lookup) = if s.contains(".json") {
             // Format referenced.json#/definitions/ExternalType
             let path_split_from_rest: Vec<&str> = s.split('#').collect::<Vec<&str>>();
@@ -384,11 +391,14 @@ impl<'r> Expander<'r> {
             } else if comp == "definitions" {
                 schema
             } else {
-                schema
-                    .definitions
-                    .get(comp)
-                    .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp))
-                    .clone()
+                let schema_ref = &schema.borrow();
+                Rc::new(RefCell::new(
+                    schema_ref
+                        .definitions
+                        .get(comp)
+                        .unwrap_or_else(|| panic!("Expected definition: `{}` {}", s, comp))
+                        .clone(),
+                ))
             }
         })
     }
@@ -410,10 +420,14 @@ impl<'r> Expander<'r> {
         } else if typ.any_of.as_ref().map_or(false, |a| a.len() == 2) {
             let any_of = typ.any_of.as_ref().unwrap();
             let simple = self.schema(&any_of[0]);
+            let simple_ref: &Schema = &simple.borrow();
             let array = self.schema(&any_of[1]);
-            if !array.type_.is_empty() {
-                if let SimpleTypes::Array = array.type_[0] {
-                    if simple == self.schema(&array.items[0]) {
+            let array_ref = &array.borrow();
+            if !array_ref.type_.is_empty() {
+                if let SimpleTypes::Array = array_ref.type_[0] {
+                    let schema = self.schema(&array_ref.items[0]);
+                    let schema_ref: &Schema = &schema.borrow();
+                    if simple_ref == schema_ref {
                         return FieldType {
                             typ: format!("Vec<{}>", self.expand_type_(&any_of[0]).typ),
                             attributes: vec![format!(
@@ -617,7 +631,7 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn expand_file_schema_ref(&mut self, canonical_file_path: &Path) -> Schema {
+    fn expand_file_schema_ref(&mut self, canonical_file_path: &Path) -> Rc<RefCell<Schema>> {
         if let Some(existing) = self.resolved_schemas.get(canonical_file_path) {
             return existing.clone();
         } else {
@@ -625,12 +639,14 @@ impl<'r> Expander<'r> {
             let json = std::fs::read_to_string(canonical_file_path).unwrap_or_else(|err| {
                 panic!("Unable to read `{:#?}`: {}", canonical_file_path, err)
             });
-            let loaded_schema: Schema = serde_json::from_str(&json).expect("JSON parse error");
+            let loaded_schema: Rc<RefCell<Schema>> = Rc::new(RefCell::new(
+                serde_json::from_str(&json).expect("JSON parse error"),
+            ));
             let type_name_from_file = Some(Self::type_from_json_file(canonical_file_path));
             let mut reffed_file_expander = Expander {
                 root_name: type_name_from_file,
                 schemafy_path: self.schemafy_path,
-                root: &loaded_schema,
+                root: loaded_schema.clone(),
                 current_field: "".into(),
                 current_type: "".into(),
                 types: self.types.clone(),
@@ -705,7 +721,7 @@ impl<'r> Expander<'r> {
     }
 
     pub fn expand_root(&mut self) -> TokenStream {
-        self.expand(self.root)
+        self.expand(&self.root.clone().borrow())
     }
 
     fn insert_type(&mut self, name: String, type_def: TokenStream) {

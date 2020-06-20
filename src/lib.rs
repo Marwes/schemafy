@@ -52,6 +52,8 @@
 use std::path::PathBuf;
 
 use schemafy_lib::Expander;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// A configurable builder for generating Rust types from a JSON
 /// schema.
@@ -129,14 +131,17 @@ impl<'a> GenerateBuilder<'a> {
             panic!("Unable to read `{}`: {}", input_path.to_string_lossy(), err)
         });
 
-        let schema = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err));
+        let schema = Rc::new(RefCell::new(
+            serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err)),
+        ));
         let mut expander = Expander::new(
             self.root_name.as_ref().map(|s| &**s),
             self.schemafy_path,
-            &schema,
+            schema.clone(),
             input_dir,
         );
-        expander.expand(&schema).into()
+        let schema_ref = &schema.borrow();
+        expander.expand(schema_ref).into()
     }
 }
 
@@ -168,7 +173,7 @@ pub fn schemafy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     GenerateBuilder {
         ..GenerateBuilder::default()
     }
-    .build_tokens(tokens)
+        .build_tokens(tokens)
 }
 
 #[doc(hidden)]
@@ -179,7 +184,7 @@ pub fn regenerate(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let tokens = GenerateBuilder {
         ..GenerateBuilder::default()
     }
-    .build_tokens(tokens);
+        .build_tokens(tokens);
 
     {
         let out = tokens.to_string();

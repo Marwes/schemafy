@@ -129,9 +129,9 @@ fn field(s: &str) -> TokenStream {
 }
 
 fn merge_option<T, F>(mut result: &mut Option<T>, r: &Option<T>, f: F)
-where
-    F: FnOnce(&mut T, &T),
-    T: Clone,
+    where
+        F: FnOnce(&mut T, &T),
+        T: Clone,
 {
     *result = match (&mut result, r) {
         (&mut &mut Some(ref mut result), &Some(ref r)) => return f(result, r),
@@ -277,7 +277,7 @@ pub struct Expander<'r> {
     root: &'r Schema,
     current_type: String,
     current_field: String,
-    types: Vec<(String, TokenStream)>,
+    types: HashMap<String, TokenStream>,
     schema_directory: PathBuf,
     resolved_schemas: HashMap<PathBuf, Schema>,
 }
@@ -289,8 +289,8 @@ struct FieldType {
 }
 
 impl<S> From<S> for FieldType
-where
-    S: Into<String>,
+    where
+        S: Into<String>,
 {
     fn from(s: S) -> FieldType {
         FieldType {
@@ -314,7 +314,7 @@ impl<'r> Expander<'r> {
             schemafy_path,
             current_field: "".into(),
             current_type: "".into(),
-            types: Vec::new(),
+            types: HashMap::new(),
             schema_directory,
             resolved_schemas: HashMap::new(),
         }
@@ -358,11 +358,9 @@ impl<'r> Expander<'r> {
             let (ref_path, maybe_inner_lookup) = {
                 let path_str = path_split_from_rest[0];
                 let ref_file = PathBuf::from(path_str);
-                let ref_path = if ref_file.is_relative() {
-                    self.schema_directory.join(ref_file)
-                } else {
-                    ref_file
-                };
+                let ref_path = self
+                    .to_canonical_path(&ref_file)
+                    .expect("Could not resolve path");
                 (
                     ref_path,
                     path_split_from_rest
@@ -455,18 +453,18 @@ impl<'r> Expander<'r> {
                 SimpleTypes::Number => "f64".into(),
                 // Handle objects defined inline
                 SimpleTypes::Object
-                    if !typ.properties.is_empty()
-                        || typ.additional_properties == Some(Value::Bool(false)) =>
-                {
-                    let name = format!(
-                        "{}{}",
-                        self.current_type.to_pascal_case(),
-                        self.current_field.to_pascal_case()
-                    );
-                    let tokens = self.expand_schema(&name, typ);
-                    self.types.push((name.clone(), tokens));
-                    name.into()
-                }
+                if !typ.properties.is_empty()
+                    || typ.additional_properties == Some(Value::Bool(false)) =>
+                    {
+                        let name = format!(
+                            "{}{}",
+                            self.current_type.to_pascal_case(),
+                            self.current_field.to_pascal_case()
+                        );
+                        let tokens = self.expand_schema(&name, typ);
+                        self.insert_type(name.clone(), tokens);
+                        name.into()
+                    }
                 SimpleTypes::Object => {
                     let prop = match typ.additional_properties {
                         Some(ref props) if props.is_object() => {
@@ -510,7 +508,7 @@ impl<'r> Expander<'r> {
                 }
                 None => type_decl,
             };
-            self.types.push((name.to_string(), definition_tokens));
+            self.insert_type(name.clone(), definition_tokens);
         }
     }
 
@@ -619,15 +617,16 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn expand_file_schema_ref(&mut self, abs_file_path: &Path) -> Schema {
-        if let Some(existing) = self.resolved_schemas.get(abs_file_path) {
+    fn expand_file_schema_ref(&mut self, canonical_file_path: &Path) -> Schema {
+        if let Some(existing) = self.resolved_schemas.get(canonical_file_path) {
             return existing.clone();
         } else {
             // Resolve the referenced file Schema.
-            let json = std::fs::read_to_string(abs_file_path)
-                .unwrap_or_else(|err| panic!("Unable to read `{:#?}`: {}", abs_file_path, err));
+            let json = std::fs::read_to_string(canonical_file_path).unwrap_or_else(|err| {
+                panic!("Unable to read `{:#?}`: {}", canonical_file_path, err)
+            });
             let loaded_schema: Schema = serde_json::from_str(&json).expect("JSON parse error");
-            let type_name_from_file = Some(Self::type_from_json_file(abs_file_path));
+            let type_name_from_file = Some(Self::type_from_json_file(canonical_file_path));
             let mut reffed_file_expander = Expander {
                 root_name: type_name_from_file,
                 schemafy_path: self.schemafy_path,
@@ -635,22 +634,26 @@ impl<'r> Expander<'r> {
                 current_field: "".into(),
                 current_type: "".into(),
                 types: self.types.clone(),
-                schema_directory: abs_file_path
+                schema_directory: canonical_file_path
                     .parent()
                     .expect(&format!(
                         "Could not detect directory of file: {:#?}",
-                        abs_file_path.as_os_str()
+                        canonical_file_path.as_os_str()
                     ))
                     .to_owned(),
                 resolved_schemas: self.resolved_schemas.clone(),
             };
             reffed_file_expander.expand_root();
             // Merge data from the reffed file Expander to reduce lookups
-            self.types.append(&mut reffed_file_expander.types);
+            for (resolved_type, resolved_type_def) in reffed_file_expander.types.into_iter() {
+                if !self.types.contains_key(&resolved_type) {
+                    self.insert_type(resolved_type, resolved_type_def);
+                }
+            }
             self.resolved_schemas
-                .insert(abs_file_path.to_owned(), loaded_schema.clone());
+                .insert(canonical_file_path.to_owned(), loaded_schema.clone());
             for (resolved_schema_path, resolved_schema) in
-                reffed_file_expander.resolved_schemas.into_iter()
+            reffed_file_expander.resolved_schemas.into_iter()
             {
                 self.resolved_schemas
                     .insert(resolved_schema_path, resolved_schema);
@@ -659,12 +662,13 @@ impl<'r> Expander<'r> {
         }
     }
 
-    fn to_absolute_path(&self, s: &Path) -> PathBuf {
-        if s.is_relative() {
+    fn to_canonical_path(&self, s: &Path) -> Option<PathBuf> {
+        let r = if s.is_relative() {
             self.schema_directory.join(s)
         } else {
             s.to_owned()
-        }
+        };
+        r.canonicalize().ok()
     }
 
     fn type_from_json_file(p: &Path) -> &str {
@@ -675,37 +679,25 @@ impl<'r> Expander<'r> {
     }
 
     fn is_resolved_ref_path(&self, p: &Path) -> bool {
-        self.resolved_schemas
-            .get(&self.to_absolute_path(p))
-            .is_some()
+        if let Some(canonical_path) = self.to_canonical_path(p) {
+            self.resolved_schemas.get(&canonical_path).is_some()
+        } else {
+            false
+        }
     }
 
     pub fn expand(&mut self, schema: &Schema) -> TokenStream {
         match self.root_name {
             Some(name) => {
                 let schema = self.expand_schema(name, schema);
-                self.types.push((name.to_string(), schema));
+                self.insert_type(name.to_string(), schema);
             }
             None => self.expand_definitions(schema),
         }
 
-        // Dedupe because we may have visited the same file multiple times when de-referencing
-        // external files
-        let mut deduped_type_defs = HashMap::new();
-        for (name, next) in &self.types {
-            if let Some(existing) = deduped_type_defs.insert(name, next) {
-                let existing_as_string = format!("{}", existing);
-                let next_as_string = format!("{}", next);
-                if existing_as_string != next_as_string {
-                    panic!(
-                        "Found two different definitions for {}: [{}] and [{}]",
-                        name, existing_as_string, next_as_string
-                    );
-                }
-            };
-        }
-
-        let types = deduped_type_defs.iter().map(|t| *t.1);
+        let mut type_vec: Vec<_> = self.types.iter().collect();
+        type_vec.sort_by_key(|name_with_def| name_with_def.0);
+        let types = type_vec.iter().map(|t| &t.1);
 
         quote! {
             #( #types )*
@@ -714,5 +706,18 @@ impl<'r> Expander<'r> {
 
     pub fn expand_root(&mut self) -> TokenStream {
         self.expand(self.root)
+    }
+
+    fn insert_type(&mut self, name: String, type_def: TokenStream) {
+        if let Some(existing) = self.types.get(&name) {
+            let new_def = format!("{}", type_def);
+            let existing_def = format!("{}", existing);
+            panic!(
+                "Double declaration for type [{}]. First [{}] Second [{}]",
+                name, existing_def, new_def
+            );
+        } else {
+            self.types.insert(name, type_def);
+        }
     }
 }

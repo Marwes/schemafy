@@ -69,6 +69,7 @@ pub use schema::{Schema, SimpleTypes};
 
 use proc_macro2::{Span, TokenStream};
 
+use indexmap::map::IndexMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -132,9 +133,9 @@ fn field(s: &str) -> TokenStream {
 }
 
 fn merge_option<T, F>(mut result: &mut Option<T>, r: &Option<T>, f: F)
-    where
-        F: FnOnce(&mut T, &T),
-        T: Clone,
+where
+    F: FnOnce(&mut T, &T),
+    T: Clone,
 {
     *result = match (&mut result, r) {
         (&mut &mut Some(ref mut result), &Some(ref r)) => return f(result, r),
@@ -286,7 +287,7 @@ pub struct Expander<'r> {
     root: Rc<Schema>,
     current_type: String,
     current_field: String,
-    types: HashMap<String, TokenStream>,
+    types: IndexMap<String, TokenStream>,
     schema_directory: PathBuf,
     resolved_schemas: HashMap<PathBuf, Rc<Schema>>,
     type_replacer: &'r Option<Box<dyn Fn(&str) -> Option<String>>>,
@@ -299,8 +300,8 @@ struct FieldType {
 }
 
 impl<S> From<S> for FieldType
-    where
-        S: Into<String>,
+where
+    S: Into<String>,
 {
     fn from(s: S) -> FieldType {
         FieldType {
@@ -325,7 +326,7 @@ impl<'r> Expander<'r> {
             schemafy_path,
             current_field: "".into(),
             current_type: "".into(),
-            types: HashMap::new(),
+            types: IndexMap::new(),
             schema_directory,
             resolved_schemas: HashMap::new(),
             type_replacer,
@@ -467,18 +468,18 @@ impl<'r> Expander<'r> {
                 SimpleTypes::Number => "f64".into(),
                 // Handle objects defined inline
                 SimpleTypes::Object
-                if !typ.properties.is_empty()
-                    || typ.additional_properties == Some(Value::Bool(false)) =>
-                    {
-                        let name = format!(
-                            "{}{}",
-                            self.current_type.to_pascal_case(),
-                            self.current_field.to_pascal_case()
-                        );
-                        let tokens = self.expand_schema(&name, typ);
-                        self.insert_type(name.clone(), tokens);
-                        name.into()
-                    }
+                    if !typ.properties.is_empty()
+                        || typ.additional_properties == Some(Value::Bool(false)) =>
+                {
+                    let name = format!(
+                        "{}{}",
+                        self.current_type.to_pascal_case(),
+                        self.current_field.to_pascal_case()
+                    );
+                    let tokens = self.expand_schema(&name, typ);
+                    self.insert_type(name.clone(), tokens);
+                    name.into()
+                }
                 SimpleTypes::Object => {
                     let prop = match typ.additional_properties {
                         Some(ref props) if props.is_object() => {
@@ -677,7 +678,7 @@ impl<'r> Expander<'r> {
             self.resolved_schemas
                 .insert(canonical_file_path.to_owned(), Rc::clone(&loaded_schema));
             for (resolved_schema_path, resolved_schema) in
-            reffed_file_expander.resolved_schemas.into_iter()
+                reffed_file_expander.resolved_schemas.into_iter()
             {
                 self.resolved_schemas
                     .insert(resolved_schema_path, resolved_schema);
@@ -719,9 +720,7 @@ impl<'r> Expander<'r> {
             None => self.expand_definitions(schema),
         }
 
-        let mut type_vec: Vec<_> = self.types.iter().collect();
-        type_vec.sort_by_key(|name_with_def| name_with_def.0);
-        let types = type_vec.iter().map(|t| &t.1);
+        let types = self.types.iter().map(|t| t.1);
 
         quote! {
             #( #types )*

@@ -129,6 +129,11 @@
             "minItems": 1,
             "uniqueItems": true
         },
+        "enumNames": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true
+        },
         "type": {
             "anyOf": [
                 { "$ref": "#/definitions/simpleTypes" },

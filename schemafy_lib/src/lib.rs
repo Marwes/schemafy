@@ -495,50 +495,109 @@ impl<'r> Expander<'r> {
             }
         } else if schema.enum_.as_ref().map_or(false, |e| !e.is_empty()) {
             let mut optional = false;
-            let variants = schema
-                .enum_
-                .as_ref()
-                .map_or(&[][..], |v| v)
-                .iter()
-                .flat_map(|v| match *v {
-                    Value::String(ref v) => {
-                        let pascal_case_variant = v.to_pascal_case();
+            let mut repr_i64 = false;
+            let variants = if schema.enum_names.as_ref().map_or(false, |e| !e.is_empty()) {
+                let values = schema.enum_.as_ref().map_or(&[][..], |v| v);
+                let names = schema.enum_names.as_ref().map_or(&[][..], |v| v);
+                if names.len() != values.len() {
+                    panic!("enumNames(length {}) and enum(length {}) have different length", names.len(), values.len())
+                }
+                names.iter()
+                    .enumerate()
+                    .map(|(idx, name)| (&values[idx], name))
+                    .flat_map(|(value, name)| {
+                        let pascal_case_variant = name.to_pascal_case();
                         let variant_name =
                             rename_keyword("", &pascal_case_variant).unwrap_or_else(|| {
                                 let v = syn::Ident::new(&pascal_case_variant, Span::call_site());
                                 quote!(#v)
                             });
-                        Some(if pascal_case_variant == *v {
-                            variant_name
-                        } else {
-                            quote! {
-                                #[serde(rename = #v)]
+                        match value {
+                            Value::String(ref s) => Some(quote! {
+                                #[serde(rename = #s)]
                                 #variant_name
-                            }
-                        })
-                    }
-                    Value::Null => {
-                        optional = true;
-                        None
-                    }
-                    _ => panic!("Expected string for enum got `{}`", v),
-                })
-                .collect::<Vec<_>>();
-
+                            }),
+                            Value::Number(ref n) => {
+                                repr_i64 = true;
+                                let num = syn::LitInt::new(&n.to_string(), Span::call_site());
+                                Some(quote! {
+                                    #variant_name = #num
+                                })
+                            },
+                            Value::Null => {
+                                optional = true;
+                                None
+                            },
+                            _ => panic!("Expected string,bool or number for enum got `{}`", value),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                schema
+                    .enum_
+                    .as_ref()
+                    .map_or(&[][..], |v| v)
+                    .iter()
+                    .flat_map(|v| match *v {
+                        Value::String(ref v) => {
+                            let pascal_case_variant = v.to_pascal_case();
+                            let variant_name =
+                                rename_keyword("", &pascal_case_variant).unwrap_or_else(|| {
+                                    let v = syn::Ident::new(&pascal_case_variant, Span::call_site());
+                                    quote!(#v)
+                                });
+                            Some(if pascal_case_variant == *v {
+                                variant_name
+                            } else {
+                                quote! {
+                                    #[serde(rename = #v)]
+                                    #variant_name
+                                }
+                            })
+                        }
+                        Value::Null => {
+                            optional = true;
+                            None
+                        }
+                        _ => panic!("Expected string for enum got `{}`", v),
+                    })
+                    .collect::<Vec<_>>()
+            };
             if optional {
                 let enum_name = syn::Ident::new(&format!("{}_", name), Span::call_site());
-                quote! {
-                    pub type #name = Option<#enum_name>;
-                    #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
-                    pub enum #enum_name {
-                        #(#variants),*
+                if repr_i64 {
+                    quote! {
+                        pub type #name = Option<#enum_name>;
+                        #[derive(Clone, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
+                        #[repr(i64)]
+                        pub enum #enum_name {
+                            #(#variants),*
+                        }
+                    }
+                } else {
+                    quote! {
+                        pub type #name = Option<#enum_name>;
+                        #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+                        pub enum #enum_name {
+                            #(#variants),*
+                        }
                     }
                 }
             } else {
-                quote! {
-                    #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
-                    pub enum #name {
-                        #(#variants),*
+                if repr_i64 {
+                    quote! {
+                        #[derive(Clone, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
+                        #[repr(i64)]
+                        pub enum #name {
+                            #(#variants),*
+                        }
+                    }
+                } else {
+                    quote! {
+                        #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+                        pub enum #name {
+                            #(#variants),*
+                        }
                     }
                 }
             }

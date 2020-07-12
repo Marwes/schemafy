@@ -1,6 +1,7 @@
 use serde_json;
 
 use serde_derive::{Deserialize, Serialize};
+use serde_repr::{Serialize_repr, Deserialize_repr};
 
 schemafy::schemafy!(
     root: Schema
@@ -82,4 +83,26 @@ schemafy::schemafy!(
 fn root_array() {
     let a = RootArray::default();
     let _: Option<&RootArrayItem> = a.get(0);
+}
+
+schemafy::schemafy!(
+    root: EnumNamesInt
+    "tests/enum-names-int.json"
+);
+
+#[test]
+fn enum_names_int() {
+    assert_eq!(serde_json::to_string(&EnumNamesInt::A).unwrap(), "1");
+    assert_eq!(serde_json::to_string(&EnumNamesInt::B).unwrap(), "2");
+}
+
+schemafy::schemafy!(
+    root: EnumNamesStr
+    "tests/enum-names-str.json"
+);
+
+#[test]
+fn enum_names_str() {
+    assert_eq!(serde_json::to_string(&EnumNamesStr::A).unwrap(), "\"1\"");
+    assert_eq!(serde_json::to_string(&EnumNamesStr::B).unwrap(), "\"2\"");
 }

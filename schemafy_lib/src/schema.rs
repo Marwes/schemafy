@@ -41,6 +41,8 @@ pub struct Schema {
     pub description: Option<String>,
     #[serde(rename = "enum")]
     pub enum_: Option<Vec<serde_json::Value>>,
+    #[serde(rename = "enumNames")]
+    pub enum_names: Option<Vec<String>>,
     #[serde(rename = "exclusiveMaximum")]
     pub exclusive_maximum: Option<bool>,
     #[serde(rename = "exclusiveMinimum")]

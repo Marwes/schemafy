@@ -39,6 +39,6 @@ perl -p -i -e 's/[0-9][0-9.]+([^#]+)# VERSION_TAG/'$1'$1# VERSION_TAG/' \
 cargo fetch
 
 git add .
-CHANGES=$(git diff  HEAD --unified=0 CHANGELOG.md | tail +6 | sed -e 's/^\+//')
-git commit -m "Version ${1}"$'\n\n'"${CHANGES}"
+CHANGES=$(git diff  HEAD --unified=0 -- CHANGELOG.md | tail +6 | sed -e 's/^\+//')
+git commit -m "Version ${1}\n\n${CHANGES}"
 git tag "v${1}"

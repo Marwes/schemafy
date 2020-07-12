@@ -4,6 +4,13 @@ version = "0.5.1" # VERSION_TAG
 authors = ["Markus Westerlind <marwes91@gmail.com>", "MATILLAT Quentin <qmatillat@gmail.com>"]
 edition = "2018"
 
+description = "Generates serializeable Rust types from a json schema"
+license = "MIT"
+
+repository = "https://github.com/Marwes/schemafy"
+documentation = "https://docs.rs/schemafy"
+
+
 [dependencies]
 proc-macro2 = "1.0"
 quote = "1.0"

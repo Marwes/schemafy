@@ -40,3 +40,4 @@ Inflector = "0.11"
 
 [features]
 internal-regenerate = []
+generate-tests = []

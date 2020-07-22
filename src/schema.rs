@@ -12,6 +12,7 @@ pub type PositiveInteger = i64 ; pub type PositiveIntegerDefault0 = serde_json
 {
     # [serde(rename = "$ref")] pub _ref : Option < String >, #
     [serde(rename = "$schema")] pub _schema : Option < String >, #
+    [serde(rename = "0")] pub _0 : Option < Box < Schema >>, #
     [serde(rename = "additionalItems")] pub additional_items : Option <
     serde_json :: Value >, # [serde(rename = "additionalProperties")] pub
     additional_properties : Option < serde_json :: Value >, #
@@ -36,14 +37,15 @@ pub type PositiveInteger = i64 ; pub type PositiveIntegerDefault0 = serde_json
     : Option < PositiveIntegerDefault0 >, # [serde(rename = "minProperties")]
     pub min_properties : Option < PositiveIntegerDefault0 >, pub minimum :
     Option < f64 >, # [serde(rename = "multipleOf")] pub multiple_of : Option
-    < f64 >, pub not : Option < Box < Schema >>, # [serde(rename = "oneOf")]
-    pub one_of : Option < SchemaArray >, pub pattern : Option < String >, #
-    [serde(default)] # [serde(rename = "patternProperties")] pub
-    pattern_properties : :: std :: collections :: BTreeMap < String, Schema >,
-    # [serde(default)] pub properties : :: std :: collections :: BTreeMap <
-    String, Schema >, pub required : Option < StringArray >, pub title :
-    Option < String >, # [serde(default)] #
-    [serde(with = "::schemafy_core::one_or_many")] # [serde(rename = "type")]
-    pub type_ : Vec < SimpleTypes >, # [serde(rename = "uniqueItems")] pub
-    unique_items : Option < bool >
+    < f64 >, pub not : Option < Box < Schema >>, #
+    [serde(rename = "numericalEnum")] pub numerical_enum : Option < serde_json
+    :: Value >, # [serde(rename = "oneOf")] pub one_of : Option < SchemaArray
+    >, pub pattern : Option < String >, # [serde(default)] #
+    [serde(rename = "patternProperties")] pub pattern_properties : :: std ::
+    collections :: BTreeMap < String, Schema >, # [serde(default)] pub
+    properties : :: std :: collections :: BTreeMap < String, Schema >, pub
+    required : Option < StringArray >, pub title : Option < String >, #
+    [serde(default)] # [serde(with = "::schemafy_core::one_or_many")] #
+    [serde(rename = "type")] pub type_ : Vec < SimpleTypes >, #
+    [serde(rename = "uniqueItems")] pub unique_items : Option < bool >
 }

@@ -71,8 +71,17 @@ fn replace_invalid_identifier_chars(s: &str) -> String {
     s.replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
 }
 
+fn replace_numeric_start(s: &str) -> String {
+    if s.chars().next().map(|c| c.is_numeric()).unwrap_or(false) {
+        format!("_{}", s)
+    } else {
+        s.to_string()
+    }
+}
+
 pub fn str_to_ident(s: &str) -> syn::Ident {
     let s = replace_invalid_identifier_chars(s);
+    let s = replace_numeric_start(&s);
     let keywords = [
         "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
         "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
@@ -306,7 +315,9 @@ impl<'r> Expander<'r> {
         } else {
             s.split('/').last().expect("Component")
         };
-        replace_invalid_identifier_chars(&s.to_pascal_case())
+        let s = &s.to_pascal_case();
+        let s = replace_invalid_identifier_chars(&s);
+        replace_numeric_start(&s)
     }
 
     fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {

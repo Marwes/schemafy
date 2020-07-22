@@ -148,7 +148,11 @@
         "allOf": { "$ref": "#/definitions/schemaArray" },
         "anyOf": { "$ref": "#/definitions/schemaArray" },
         "oneOf": { "$ref": "#/definitions/schemaArray" },
-        "not": { "$ref": "#" }
+        "not": { "$ref": "#" },
+        "0": { "$ref": "#" },
+        "numericalEnum": {
+            "enum": [ "0", "1", "2", "3", "4", "5", "6" ]
+        }
     },
     "dependencies": {
         "exclusiveMaximum": [ "maximum" ],

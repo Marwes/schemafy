@@ -345,7 +345,7 @@ impl<'r> Expander<'r> {
 
     fn expand_type(&mut self, type_name: &str, required: bool, typ: &Schema) -> FieldType {
         let mut result = self.expand_type_(typ);
-        if type_name == result.typ {
+        if type_name.to_pascal_case() == result.typ.to_pascal_case() {
             result.typ = format!("Box<{}>", result.typ)
         }
         if !required && !result.default {

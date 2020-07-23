@@ -106,3 +106,10 @@ fn enum_names_str() {
     assert_eq!(serde_json::to_string(&EnumNamesStr::A).unwrap(), "\"1\"");
     assert_eq!(serde_json::to_string(&EnumNamesStr::B).unwrap(), "\"2\"");
 }
+
+schemafy::schemafy!(
+    root: RecursiveTypes
+    "tests/recursive_types.json"
+);
+
+fn recursive_types_exist(_: RecursiveTypes) {}

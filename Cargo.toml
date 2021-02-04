@@ -6,7 +6,7 @@ edition = "2018"
 
 description = "Generates serializeable Rust types from a json schema"
 license = "MIT"
-
+keywords = ["json-schema", "code-generation"]
 repository = "https://github.com/Marwes/schemafy"
 documentation = "https://docs.rs/schemafy"
 

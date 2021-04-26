@@ -1,4 +1,4 @@
-language: Rust
+language: rust
 sudo: false
 rust:
 - nightly
@@ -10,4 +10,3 @@ script:
 env:
   global:
   - RUST_BACKTRACE=1
-

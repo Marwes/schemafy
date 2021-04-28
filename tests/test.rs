@@ -1,7 +1,5 @@
-use serde_json;
-
 use serde_derive::{Deserialize, Serialize};
-use serde_repr::{Serialize_repr, Deserialize_repr};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
 schemafy::schemafy!(
     root: Schema
@@ -112,4 +110,5 @@ schemafy::schemafy!(
     "tests/recursive_types.json"
 );
 
+#[allow(dead_code)]
 fn recursive_types_exist(_: RecursiveTypes) {}

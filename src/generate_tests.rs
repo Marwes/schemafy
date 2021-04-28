@@ -68,7 +68,11 @@ mod _{}_{} {{
                     // Prefix the name with an underscore if it starts
                     // with a number.
                     let root = test.description.to_snake_case();
-                    let prefix = if root.chars().next().unwrap().is_numeric() { "_" } else { "" };
+                    let prefix = if root.chars().next().unwrap().is_numeric() {
+                        "_"
+                    } else {
+                        ""
+                    };
                     format!("{}{}", prefix, root)
                 };
 

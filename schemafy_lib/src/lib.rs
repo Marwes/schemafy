@@ -497,11 +497,19 @@ impl<'r> Expander<'r> {
         let name = syn::Ident::new(&pascal_case_name, Span::call_site());
         let is_struct =
             !fields.is_empty() || schema.additional_properties == Some(Value::Bool(false));
+        let serde_rename = if name == original_name {
+            None
+        } else {
+            Some(quote! {
+                #[serde(rename = #original_name)]
+            })
+        };
         let is_enum = schema.enum_.as_ref().map_or(false, |e| !e.is_empty());
         let type_decl = if is_struct {
             if default {
                 quote! {
                     #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
+                    #serde_rename
                     pub struct #name {
                         #(#fields),*
                     }
@@ -509,6 +517,7 @@ impl<'r> Expander<'r> {
             } else {
                 quote! {
                     #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+                    #serde_rename
                     pub struct #name {
                         #(#fields),*
                     }
@@ -596,6 +605,7 @@ impl<'r> Expander<'r> {
                     quote! {
                         pub type #name = Option<#enum_name>;
                         #[derive(Clone, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
+                        #serde_rename
                         #[repr(i64)]
                         pub enum #enum_name {
                             #(#variants),*
@@ -605,6 +615,7 @@ impl<'r> Expander<'r> {
                     quote! {
                         pub type #name = Option<#enum_name>;
                         #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+                        #serde_rename
                         pub enum #enum_name {
                             #(#variants),*
                         }
@@ -613,6 +624,7 @@ impl<'r> Expander<'r> {
             } else if repr_i64 {
                 quote! {
                     #[derive(Clone, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
+                    #serde_rename
                     #[repr(i64)]
                     pub enum #name {
                         #(#variants),*
@@ -621,6 +633,7 @@ impl<'r> Expander<'r> {
             } else {
                 quote! {
                     #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+                    #serde_rename
                     pub enum #name {
                         #(#variants),*
                     }
@@ -633,17 +646,11 @@ impl<'r> Expander<'r> {
                 .parse::<TokenStream>()
                 .unwrap();
             return quote! {
+                #serde_rename
                 pub type #name = #typ;
             };
         };
-        if name == original_name {
-            type_decl
-        } else {
-            quote! {
-                #[serde(rename = #original_name)]
-                #type_decl
-            }
-        }
+        type_decl
     }
 
     pub fn expand(&mut self, schema: &Schema) -> TokenStream {

@@ -646,7 +646,6 @@ impl<'r> Expander<'r> {
                 .parse::<TokenStream>()
                 .unwrap();
             return quote! {
-                #serde_rename
                 pub type #name = #typ;
             };
         };

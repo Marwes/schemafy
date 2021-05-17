@@ -68,7 +68,9 @@ pub use schema::{Schema, SimpleTypes};
 use proc_macro2::{Span, TokenStream};
 
 fn replace_invalid_identifier_chars(s: &str) -> String {
-    s.replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
+    s.strip_prefix('$')
+        .unwrap_or(s)
+        .replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
 }
 
 fn replace_numeric_start(s: &str) -> String {
@@ -495,6 +497,7 @@ impl<'r> Expander<'r> {
         let name = syn::Ident::new(&pascal_case_name, Span::call_site());
         let is_struct =
             !fields.is_empty() || schema.additional_properties == Some(Value::Bool(false));
+        let is_enum = schema.enum_.as_ref().map_or(false, |e| !e.is_empty());
         let type_decl = if is_struct {
             if default {
                 quote! {
@@ -511,7 +514,7 @@ impl<'r> Expander<'r> {
                     }
                 }
             }
-        } else if schema.enum_.as_ref().map_or(false, |e| !e.is_empty()) {
+        } else if is_enum {
             let mut optional = false;
             let mut repr_i64 = false;
             let variants = if schema.enum_names.as_ref().map_or(false, |e| !e.is_empty()) {

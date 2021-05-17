@@ -170,11 +170,9 @@ pub fn regenerate(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     {
         let out = tokens.to_string();
-        std::fs::write("src/schema.rs", &out).unwrap();
-        Command::new("rustfmt")
-            .arg("schemafy_lib/src/schema.rs")
-            .output()
-            .unwrap();
+        let schema_path = "schemafy_lib/src/schema.rs";
+        std::fs::write(schema_path, &out).unwrap();
+        Command::new("rustfmt").arg(schema_path).output().unwrap();
     }
 
     tokens

@@ -322,7 +322,7 @@ impl<'r> Expander<'r> {
             s.split('/').last().expect("Component")
         };
         let s = &s.to_pascal_case();
-        let s = replace_invalid_identifier_chars(&s);
+        let s = replace_invalid_identifier_chars(s);
         replace_numeric_start(&s)
     }
 

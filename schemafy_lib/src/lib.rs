@@ -52,6 +52,8 @@ extern crate serde_derive;
 #[macro_use]
 extern crate quote;
 
+pub mod generator;
+
 /// Types from the JSON Schema meta-schema (draft 4).
 ///
 /// This module is itself generated from a JSON schema.
@@ -64,6 +66,8 @@ use inflector::Inflector;
 use serde_json::Value;
 
 pub use schema::{Schema, SimpleTypes};
+
+pub use generator::{Generator, GeneratorBuilder};
 
 use proc_macro2::{Span, TokenStream};
 

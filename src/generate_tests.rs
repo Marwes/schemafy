@@ -149,7 +149,7 @@ fn is_blacklisted(test_group: &str, index: usize) -> bool {
         "pattern" => &[0],
         "pattern_properties" => &[0, 1, 2],
         "properties" => &[0, 1, 2],
-        "ref" => &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        "ref" => &[0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12],
         "ref_remote" => &[0, 1, 2, 3, 4, 5, 6],
         "required" => &[0, 2],
         "type" => &[6, 7, 9, 10],

@@ -10,14 +10,8 @@ keywords = ["json-schema", "code-generation"]
 repository = "https://github.com/Marwes/schemafy"
 documentation = "https://docs.rs/schemafy"
 
-default-run = "main"
-
 [lib]
 proc-macro = true
-
-[[bin]]
-name = "main"
-path = "src/main.rs"
 
 [[bin]]
 name = "generate-tests"
@@ -37,6 +31,9 @@ syn = "1.0"
 
 Inflector = "0.11"
 
+[build-dependencies]
+schemafy_core = { version = "0.5.2", path = "schemafy_core" } # VERSION_TAG
+schemafy_lib = { version = "0.5.2", path = "schemafy_lib" }   # VERSION_TAG
 
 [features]
 internal-regenerate = []

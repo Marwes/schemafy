@@ -1,5 +1,8 @@
 use crate::Expander;
-use std::{io, path::PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 /// A configurable builder for generating Rust types from a JSON
 /// schema.
@@ -19,7 +22,7 @@ pub struct Generator<'a, 'b> {
     /// the default should be fine.
     pub schemafy_path: &'a str,
     /// The JSON schema file to read
-    pub input_file: &'b str,
+    pub input_file: &'b Path,
 }
 
 impl<'a, 'b> Generator<'a, 'b> {
@@ -29,20 +32,24 @@ impl<'a, 'b> Generator<'a, 'b> {
     }
 
     pub fn generate(&self) -> proc_macro2::TokenStream {
-        let input_file = PathBuf::from(self.input_file);
-
-        let input_path = if input_file.is_relative() {
+        let input_file = if self.input_file.is_relative() {
             let crate_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-            crate_root.join(input_file)
+            crate_root.join(self.input_file)
         } else {
-            input_file
+            PathBuf::from(self.input_file)
         };
 
-        let json = std::fs::read_to_string(&input_path).unwrap_or_else(|err| {
-            panic!("Unable to read `{}`: {}", input_path.to_string_lossy(), err)
+        let json = std::fs::read_to_string(&input_file).unwrap_or_else(|err| {
+            panic!("Unable to read `{}`: {}", input_file.to_string_lossy(), err)
         });
 
-        let schema = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err));
+        let schema = serde_json::from_str(&json).unwrap_or_else(|err| {
+            panic!(
+                "Cannot parse `{}` as JSON: {}",
+                input_file.to_string_lossy(),
+                err
+            )
+        });
         let mut expander = Expander::new(self.root_name.as_deref(), self.schemafy_path, &schema);
         expander.expand(&schema)
     }
@@ -69,7 +76,7 @@ impl<'a, 'b> Default for GeneratorBuilder<'a, 'b> {
             inner: Generator {
                 root_name: None,
                 schemafy_path: "::schemafy_core::",
-                input_file: "schema.json",
+                input_file: Path::new("schema.json"),
             },
         }
     }
@@ -84,8 +91,8 @@ impl<'a, 'b> GeneratorBuilder<'a, 'b> {
         self.inner.root_name = Some(root_name.to_string());
         self
     }
-    pub fn with_input_file(mut self, input_file: &'b str) -> Self {
-        self.inner.input_file = input_file;
+    pub fn with_input_file<P: ?Sized + AsRef<Path>>(mut self, input_file: &'b P) -> Self {
+        self.inner.input_file = input_file.as_ref();
         self
     }
     pub fn with_schemafy_path(mut self, schemafy_path: &'a str) -> Self {

@@ -2,7 +2,7 @@
 
 use inflector::Inflector;
 use serde::{Deserialize, Serialize};
-use std::{error::Error, ffi::OsStr, fs, path::PathBuf};
+use std::{error::Error, ffi::OsStr, fs, path::PathBuf, process::Command};
 
 // Each test has a description, schema, and a list of tests. Each of
 // those tests has a description, some data, and a `valid` field which
@@ -40,6 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             path.display()
         );
 
+        let mut is_module_empty = true;
+
         for (i, test_group) in test_schema.iter().enumerate() {
             if is_blacklisted(&module_name, i) {
                 blacklist_count += 1;
@@ -47,9 +49,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                 continue;
             }
 
+            is_module_empty = false;
+
             let schema_name = format!("{}_{}.json", module_name, i);
             let schema = serde_json::to_string(&test_group.schema)?;
             fs::write(schemas_dir.join(&schema_name), schema)?;
+
+            let schema = schemafy_lib::Generator::builder()
+                .with_root_name_str("Schema")
+                .with_input_file(&schemas_dir.join(schema_name))
+                .build()
+                .generate();
 
             test_file.push_str(&format!(
                 r#"
@@ -57,11 +67,11 @@ mod _{}_{} {{
     #[allow(unused_imports)]
     use serde::{{Deserialize, Serialize}};
 
-    schemafy::schemafy!(root: Schema "tests/test_suite/schemas/{}");
+    {}
 "#,
                 i,
                 test_group.description.to_snake_case(),
-                schema_name
+                &schema.to_string()
             ));
             for test in &test_group.tests {
                 let test_name = {
@@ -100,10 +110,14 @@ mod _{}_{} {{
             test_file.push_str("}\n");
         }
 
-        fs::write(
-            test_suite_dir.join(format!("{}.rs", module_name)),
-            test_file,
-        )?;
+        if is_module_empty {
+            continue;
+        }
+
+        let test_path = test_suite_dir.join(format!("{}.rs", module_name));
+
+        fs::write(&test_path, test_file)?;
+        Command::new("rustfmt").arg(test_path).output()?;
         test_modules.push(module_name);
     }
 
@@ -149,7 +163,7 @@ fn is_blacklisted(test_group: &str, index: usize) -> bool {
         "pattern" => &[0],
         "pattern_properties" => &[0, 1, 2],
         "properties" => &[0, 1, 2],
-        "ref" => &[0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12],
+        "ref" => &[0, 1, 2, 3, 6, 8, 9, 10, 11, 12],
         "ref_remote" => &[0, 1, 2, 3, 4, 5, 6],
         "required" => &[0, 2],
         "type" => &[6, 7, 9, 10],

@@ -85,9 +85,37 @@ fn replace_numeric_start(s: &str) -> String {
     }
 }
 
+fn remove_excess_underscores(s: &str) -> String {
+    let mut result = String::new();
+    let mut char_iter = s.chars().peekable();
+
+    while let Some(c) = char_iter.next() {
+        let next_c = char_iter.peek();
+        if c != '_' || !matches!(next_c, Some('_')) {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
 pub fn str_to_ident(s: &str) -> syn::Ident {
+    if s.is_empty() {
+        return syn::Ident::new("empty_", Span::call_site());
+    }
+
+    if s.chars().all(|c| c == '_') {
+        return syn::Ident::new("underscore_", Span::call_site());
+    }
+
     let s = replace_invalid_identifier_chars(s);
     let s = replace_numeric_start(&s);
+    let s = remove_excess_underscores(&s);
+
+    if s.is_empty() {
+        return syn::Ident::new("invalid_", Span::call_site());
+    }
+
     let keywords = [
         "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
         "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
@@ -95,12 +123,11 @@ pub fn str_to_ident(s: &str) -> syn::Ident {
         "where", "while", "abstract", "become", "box", "do", "final", "macro", "override", "priv",
         "typeof", "unsized", "virtual", "yield", "async", "await", "try",
     ];
-
     if keywords.iter().any(|&keyword| keyword == s) {
-        syn::Ident::new(&format!("{}_", s), Span::call_site())
-    } else {
-        syn::Ident::new(&s, Span::call_site())
+        return syn::Ident::new(&format!("{}_", s), Span::call_site());
     }
+
+    syn::Ident::new(&s, Span::call_site())
 }
 
 fn rename_keyword(prefix: &str, s: &str) -> Option<TokenStream> {
@@ -119,24 +146,23 @@ fn rename_keyword(prefix: &str, s: &str) -> Option<TokenStream> {
 
 fn field(s: &str) -> TokenStream {
     if let Some(t) = rename_keyword("pub", s) {
-        t
-    } else {
-        let snake = s.to_snake_case();
-        if snake != s || snake.contains(|c: char| c == '$' || c == '#') {
-            let field = if snake == "ref" {
-                syn::Ident::new("ref_", Span::call_site())
-            } else {
-                syn::Ident::new(&snake.replace('$', "").replace('#', ""), Span::call_site())
-            };
+        return t;
+    }
+    let snake = s.to_snake_case();
+    if snake == s && !snake.contains(|c: char| c == '$' || c == '#') {
+        let field = syn::Ident::new(s, Span::call_site());
+        return quote!( pub #field );
+    }
 
-            quote! {
-                #[serde(rename = #s)]
-                pub #field
-            }
-        } else {
-            let field = syn::Ident::new(s, Span::call_site());
-            quote!( pub #field )
-        }
+    let field = if snake.is_empty() {
+        syn::Ident::new("underscore", Span::call_site())
+    } else {
+        str_to_ident(&snake)
+    };
+
+    quote! {
+        #[serde(rename = #s)]
+        pub #field
     }
 }
 
@@ -327,7 +353,8 @@ impl<'r> Expander<'r> {
         };
         let s = &s.to_pascal_case();
         let s = replace_invalid_identifier_chars(s);
-        replace_numeric_start(&s)
+        replace_numeric_start(&s);
+        remove_excess_underscores(&s)
     }
 
     fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {

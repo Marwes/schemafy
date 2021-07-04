@@ -21,15 +21,9 @@ fn test_str_to_ident() {
         Ident::new("normalField", Span::call_site())
     );
 
-    assert_eq!(
-        str_to_ident("ref"),
-        Ident::new("ref_", Span::call_site())
-    );
+    assert_eq!(str_to_ident("ref"), Ident::new("ref_", Span::call_site()));
 
-    assert_eq!(
-        str_to_ident(""),
-        Ident::new("empty_", Span::call_site())
-    );
+    assert_eq!(str_to_ident(""), Ident::new("empty_", Span::call_site()));
     assert_eq!(
         str_to_ident("_"),
         Ident::new("underscore_", Span::call_site())
@@ -39,10 +33,7 @@ fn test_str_to_ident() {
         Ident::new("underscore_", Span::call_site())
     );
 
-    assert_eq!(
-        str_to_ident("_7_"),
-        Ident::new("_7_", Span::call_site())
-    );
+    assert_eq!(str_to_ident("_7_"), Ident::new("_7_", Span::call_site()));
     assert_eq!(
         str_to_ident("thieves' tools"),
         // only one underscore

@@ -59,11 +59,13 @@ pub mod generator;
 /// This module is itself generated from a JSON schema.
 mod schema;
 
-use std::borrow::Cow;
+use std::{borrow::Cow, convert::TryFrom};
 
 use inflector::Inflector;
 
 use serde_json::Value;
+
+use uriparse::{Fragment, URI};
 
 pub use schema::{Schema, SimpleTypes};
 
@@ -346,15 +348,27 @@ impl<'r> Expander<'r> {
     }
 
     fn type_ref(&self, s: &str) -> String {
-        let s = if s == "#" {
+        // ref is supposed to be be a valid URI, however we should better have a fallback plan
+        let fragment = URI::try_from(s)
+            .map(|uri| uri.fragment().map(Fragment::to_owned))
+            .ok()
+            .flatten()
+            .or({
+                let s = s.strip_prefix('#').unwrap_or(s);
+                Fragment::try_from(s).ok()
+            })
+            .map(|fragment| fragment.to_string())
+            .unwrap_or_else(|| s.to_owned());
+
+        let ref_ = if fragment.is_empty() {
             self.root_name.expect("No root name specified for schema")
         } else {
-            s.split('/').last().expect("Component")
+            fragment.split('/').last().expect("Component")
         };
-        let s = &s.to_pascal_case();
-        let s = replace_invalid_identifier_chars(s);
-        replace_numeric_start(&s);
-        remove_excess_underscores(&s)
+
+        let ref_ = ref_.to_pascal_case();
+        let ref_ = replace_invalid_identifier_chars(&ref_);
+        replace_numeric_start(&ref_)
     }
 
     fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {
@@ -701,5 +715,48 @@ impl<'r> Expander<'r> {
 
     pub fn expand_root(&mut self) -> TokenStream {
         self.expand(self.root)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_expander_type_ref() {
+        let json = std::fs::read_to_string("src/schema.json").expect("Read schema JSON file");
+        let schema = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err));
+        let expander = Expander::new(Some("SchemaName"), "::schemafy_core::", &schema);
+
+        assert_eq!(expander.type_ref("normalField"), "NormalField");
+        assert_eq!(expander.type_ref("#"), "SchemaName");
+        assert_eq!(expander.type_ref(""), "SchemaName");
+        assert_eq!(expander.type_ref("1"), "_1");
+        assert_eq!(
+            expander.type_ref("http://example.com/schema.json#"),
+            "SchemaName"
+        );
+        assert_eq!(
+            expander.type_ref("http://example.com/normalField#withFragment"),
+            "WithFragment"
+        );
+        assert_eq!(
+            expander.type_ref("http://example.com/normalField#withFragment/and/path"),
+            "Path"
+        );
+        assert_eq!(
+            expander.type_ref("http://example.com/normalField?with&params#andFragment/and/path"),
+            "Path"
+        );
+        assert_eq!(expander.type_ref("#/only/Fragment"), "Fragment");
+
+        // Invalid cases, just to verify the behavior
+        assert_eq!(expander.type_ref("ref"), "Ref");
+        assert_eq!(expander.type_ref("_"), "");
+        assert_eq!(expander.type_ref("thieves' tools"), "ThievesTools");
+        assert_eq!(
+            expander.type_ref("http://example.com/normalField?with&params=1"),
+            "NormalFieldWithParams1"
+        );
     }
 }

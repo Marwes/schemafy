@@ -59,11 +59,13 @@ pub mod generator;
 /// This module is itself generated from a JSON schema.
 mod schema;
 
-use std::borrow::Cow;
+use std::{borrow::Cow, convert::TryFrom};
 
 use inflector::Inflector;
 
 use serde_json::Value;
+
+use uriparse::{Fragment, URI};
 
 pub use schema::{Schema, SimpleTypes};
 
@@ -85,9 +87,37 @@ fn replace_numeric_start(s: &str) -> String {
     }
 }
 
+fn remove_excess_underscores(s: &str) -> String {
+    let mut result = String::new();
+    let mut char_iter = s.chars().peekable();
+
+    while let Some(c) = char_iter.next() {
+        let next_c = char_iter.peek();
+        if c != '_' || !matches!(next_c, Some('_')) {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
 pub fn str_to_ident(s: &str) -> syn::Ident {
+    if s.is_empty() {
+        return syn::Ident::new("empty_", Span::call_site());
+    }
+
+    if s.chars().all(|c| c == '_') {
+        return syn::Ident::new("underscore_", Span::call_site());
+    }
+
     let s = replace_invalid_identifier_chars(s);
     let s = replace_numeric_start(&s);
+    let s = remove_excess_underscores(&s);
+
+    if s.is_empty() {
+        return syn::Ident::new("invalid_", Span::call_site());
+    }
+
     let keywords = [
         "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
         "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
@@ -95,12 +125,11 @@ pub fn str_to_ident(s: &str) -> syn::Ident {
         "where", "while", "abstract", "become", "box", "do", "final", "macro", "override", "priv",
         "typeof", "unsized", "virtual", "yield", "async", "await", "try",
     ];
-
     if keywords.iter().any(|&keyword| keyword == s) {
-        syn::Ident::new(&format!("{}_", s), Span::call_site())
-    } else {
-        syn::Ident::new(&s, Span::call_site())
+        return syn::Ident::new(&format!("{}_", s), Span::call_site());
     }
+
+    syn::Ident::new(&s, Span::call_site())
 }
 
 fn rename_keyword(prefix: &str, s: &str) -> Option<TokenStream> {
@@ -119,24 +148,23 @@ fn rename_keyword(prefix: &str, s: &str) -> Option<TokenStream> {
 
 fn field(s: &str) -> TokenStream {
     if let Some(t) = rename_keyword("pub", s) {
-        t
-    } else {
-        let snake = s.to_snake_case();
-        if snake != s || snake.contains(|c: char| c == '$' || c == '#') {
-            let field = if snake == "ref" {
-                syn::Ident::new("ref_", Span::call_site())
-            } else {
-                syn::Ident::new(&snake.replace('$', "").replace('#', ""), Span::call_site())
-            };
+        return t;
+    }
+    let snake = s.to_snake_case();
+    if snake == s && !snake.contains(|c: char| c == '$' || c == '#') {
+        let field = syn::Ident::new(s, Span::call_site());
+        return quote!( pub #field );
+    }
 
-            quote! {
-                #[serde(rename = #s)]
-                pub #field
-            }
-        } else {
-            let field = syn::Ident::new(s, Span::call_site());
-            quote!( pub #field )
-        }
+    let field = if snake.is_empty() {
+        syn::Ident::new("underscore", Span::call_site())
+    } else {
+        str_to_ident(&snake)
+    };
+
+    quote! {
+        #[serde(rename = #s)]
+        pub #field
     }
 }
 
@@ -320,14 +348,27 @@ impl<'r> Expander<'r> {
     }
 
     fn type_ref(&self, s: &str) -> String {
-        let s = if s == "#" {
+        // ref is supposed to be be a valid URI, however we should better have a fallback plan
+        let fragment = URI::try_from(s)
+            .map(|uri| uri.fragment().map(Fragment::to_owned))
+            .ok()
+            .flatten()
+            .or({
+                let s = s.strip_prefix('#').unwrap_or(s);
+                Fragment::try_from(s).ok()
+            })
+            .map(|fragment| fragment.to_string())
+            .unwrap_or_else(|| s.to_owned());
+
+        let ref_ = if fragment.is_empty() {
             self.root_name.expect("No root name specified for schema")
         } else {
-            s.split('/').last().expect("Component")
+            fragment.split('/').last().expect("Component")
         };
-        let s = &s.to_pascal_case();
-        let s = replace_invalid_identifier_chars(s);
-        replace_numeric_start(&s)
+
+        let ref_ = ref_.to_pascal_case();
+        let ref_ = replace_invalid_identifier_chars(&ref_);
+        replace_numeric_start(&ref_)
     }
 
     fn schema(&self, schema: &'r Schema) -> Cow<'r, Schema> {
@@ -674,5 +715,48 @@ impl<'r> Expander<'r> {
 
     pub fn expand_root(&mut self) -> TokenStream {
         self.expand(self.root)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_expander_type_ref() {
+        let json = std::fs::read_to_string("src/schema.json").expect("Read schema JSON file");
+        let schema = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err));
+        let expander = Expander::new(Some("SchemaName"), "::schemafy_core::", &schema);
+
+        assert_eq!(expander.type_ref("normalField"), "NormalField");
+        assert_eq!(expander.type_ref("#"), "SchemaName");
+        assert_eq!(expander.type_ref(""), "SchemaName");
+        assert_eq!(expander.type_ref("1"), "_1");
+        assert_eq!(
+            expander.type_ref("http://example.com/schema.json#"),
+            "SchemaName"
+        );
+        assert_eq!(
+            expander.type_ref("http://example.com/normalField#withFragment"),
+            "WithFragment"
+        );
+        assert_eq!(
+            expander.type_ref("http://example.com/normalField#withFragment/and/path"),
+            "Path"
+        );
+        assert_eq!(
+            expander.type_ref("http://example.com/normalField?with&params#andFragment/and/path"),
+            "Path"
+        );
+        assert_eq!(expander.type_ref("#/only/Fragment"), "Fragment");
+
+        // Invalid cases, just to verify the behavior
+        assert_eq!(expander.type_ref("ref"), "Ref");
+        assert_eq!(expander.type_ref("_"), "");
+        assert_eq!(expander.type_ref("thieves' tools"), "ThievesTools");
+        assert_eq!(
+            expander.type_ref("http://example.com/normalField?with&params=1"),
+            "NormalFieldWithParams1"
+        );
     }
 }

@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "one-of-types",
+  "type": "object",
+  "oneOf": [
+    {
+      "properties": {
+        "bar": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bar"
+      ]
+    },
+    {
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "foo"
+      ]
+    }
+  ]
+}

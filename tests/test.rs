@@ -112,3 +112,15 @@ schemafy::schemafy!(
 
 #[allow(dead_code)]
 fn recursive_types_exist(_: RecursiveTypes) {}
+
+schemafy::schemafy!(
+    root: OneOfSchema
+    "tests/one-of-types.json"
+);
+
+#[test]
+fn one_of_parsing() {
+    let _: OneOfSchema = serde_json::from_str(r#"{"bar":2}"#).unwrap();
+    let _: OneOfSchema = serde_json::from_str(r#"{"foo":"baz"}"#).unwrap();
+    assert!(serde_json::from_str::<OneOfSchema>(r#"{"foo":3}"#).is_err());
+}

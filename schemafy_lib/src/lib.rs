@@ -424,7 +424,7 @@ impl<'r> Expander<'r> {
     fn expand_type_(&mut self, typ: &Schema) -> FieldType {
         if let Some(ref ref_) = typ.ref_ {
             self.type_ref(ref_).into()
-        } else if typ.any_of.as_ref().map_or(false, |a| a.len() == 2) {
+        } else if typ.any_of.as_ref().map_or(false, |a| a.len() >= 2) {
             let any_of = typ.any_of.as_ref().unwrap();
             let simple = self.schema(&any_of[0]);
             let array = self.schema(&any_of[1]);
@@ -443,6 +443,11 @@ impl<'r> Expander<'r> {
                 }
             }
             "serde_json::Value".into()
+        } else if typ.one_of.as_ref().map_or(false, |a| a.len() >= 2) {
+            let schemas = typ.one_of.as_ref().unwrap();
+            let (type_name, type_def) = self.expand_one_of(schemas);
+            self.types.push((type_name.clone(), type_def));
+            type_name.into()
         } else if typ.type_.len() == 2 {
             if typ.type_[0] == SimpleTypes::Null || typ.type_[1] == SimpleTypes::Null {
                 let mut ty = typ.clone();
@@ -509,6 +514,37 @@ impl<'r> Expander<'r> {
         } else {
             "serde_json::Value".into()
         }
+    }
+
+    fn expand_one_of(&mut self, schemas: &[Schema]) -> (String, TokenStream) {
+        let saved_type = self.current_type.clone();
+        let type_name = format!("{}Variants", saved_type);
+        if schemas.is_empty() {
+            return (type_name, TokenStream::new());
+        }
+        let enum_data: Vec<_> = schemas
+            .iter()
+            .enumerate()
+            .map(|(i, schema)| {
+                let schema = self.schema(schema);
+                let name = schema
+                    .id
+                    .clone()
+                    .unwrap_or(format!("{}Variant{}", saved_type, i));
+                let field_type = self.expand_schema(&name, &schema);
+                self.types.push((name.clone(), field_type));
+                syn::Ident::new(&name, Span::call_site())
+            })
+            .collect();
+        let type_name_ident = syn::Ident::new(&type_name, Span::call_site());
+        let type_def = quote! {
+            #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+            #[serde(untagged)]
+            pub enum #type_name_ident {
+                #(#enum_data(#enum_data)),*
+            }
+        };
+        (type_name, type_def)
     }
 
     fn expand_definitions(&mut self, schema: &Schema) {

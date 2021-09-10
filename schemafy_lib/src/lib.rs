@@ -406,7 +406,9 @@ impl<'r> Expander<'r> {
     }
 
     fn expand_type(&mut self, type_name: &str, required: bool, typ: &Schema) -> FieldType {
+        let saved_type = self.current_type.clone();
         let mut result = self.expand_type_(typ);
+        self.current_type = saved_type;
         if type_name.to_pascal_case() == result.typ.to_pascal_case() {
             result.typ = format!("Box<{}>", result.typ)
         }
@@ -758,5 +760,27 @@ mod tests {
             expander.type_ref("http://example.com/normalField?with&params=1"),
             "NormalFieldWithParams1"
         );
+    }
+
+    #[test]
+    fn embedded_type_names() {
+        use std::collections::HashSet;
+
+        let json = std::fs::read_to_string("tests/multiple-property-types.json")
+            .expect("Read schema JSON file");
+        let schema = serde_json::from_str(&json).unwrap();
+        let mut expander = Expander::new(Some("Root"), "UNUSED", &schema);
+        expander.expand(&schema);
+
+        // check that the type names for embedded objects only include their
+        // ancestors' type names, and not names from unrelated fields
+        let types = expander
+            .types
+            .iter()
+            .map(|v| v.0.as_str())
+            .collect::<HashSet<&str>>();
+        assert!(types.contains("RootItemAC"));
+        assert!(types.contains("RootKM"));
+        assert!(types.contains("RootTV"));
     }
 }

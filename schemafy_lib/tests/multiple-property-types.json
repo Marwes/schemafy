@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "multiple-property-types",
+  "type": "object",
+  "properties": {
+    "A": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "B": {
+            "type": "integer"
+          },
+          "C": {
+            "type": "object",
+            "properties": {
+              "D": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "K": {
+      "type": "object",
+      "properties": {
+        "L": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "M": {
+          "type": "object",
+          "properties": {
+            "N": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "T": {
+      "type": "object",
+      "properties": {
+        "U": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "V": {
+          "type": "object",
+          "properties": {
+            "W": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

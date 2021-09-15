@@ -518,33 +518,36 @@ impl<'r> Expander<'r> {
 
     fn expand_one_of(&mut self, schemas: &[Schema]) -> (String, TokenStream) {
         let saved_type = self.current_type.clone();
-        let type_name = format!("{}Variants", saved_type);
         if schemas.is_empty() {
-            return (type_name, TokenStream::new());
+            return (saved_type, TokenStream::new());
         }
-        let enum_data: Vec<_> = schemas
+        let (variant_names, variant_types): (Vec<_>, Vec<_>) = schemas
             .iter()
             .enumerate()
             .map(|(i, schema)| {
-                let schema = self.schema(schema);
                 let name = schema
                     .id
                     .clone()
                     .unwrap_or(format!("{}Variant{}", saved_type, i));
-                let field_type = self.expand_schema(&name, &schema);
-                self.types.push((name.clone(), field_type));
-                syn::Ident::new(&name, Span::call_site())
+                if let Some(ref_) = &schema.ref_ {
+                    let type_ = self.type_ref(ref_);
+                    (format_ident!("{}", &name), format_ident!("{}", &type_))
+                } else {
+                    let field_type = self.expand_schema(&name, schema);
+                    self.types.push((name.clone(), field_type));
+                    (format_ident!("{}", &name), format_ident!("{}", &name))
+                }
             })
-            .collect();
-        let type_name_ident = syn::Ident::new(&type_name, Span::call_site());
+            .unzip();
+        let type_name_ident = syn::Ident::new(&saved_type, Span::call_site());
         let type_def = quote! {
             #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
             #[serde(untagged)]
             pub enum #type_name_ident {
-                #(#enum_data(#enum_data)),*
+                #(#variant_names(#variant_types)),*
             }
         };
-        (type_name, type_def)
+        (saved_type, type_def)
     }
 
     fn expand_definitions(&mut self, schema: &Schema) {
@@ -728,6 +731,10 @@ impl<'r> Expander<'r> {
                 .typ
                 .parse::<TokenStream>()
                 .unwrap();
+            // Skip self-referential types, e.g. `struct Schema = Schema`
+            if name == typ.to_string() {
+                return TokenStream::new();
+            }
             return quote! {
                 pub type #name = #typ;
             };

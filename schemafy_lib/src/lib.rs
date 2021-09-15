@@ -528,7 +528,7 @@ impl<'r> Expander<'r> {
                 let name = schema
                     .id
                     .clone()
-                    .unwrap_or(format!("{}Variant{}", saved_type, i));
+                    .unwrap_or_else(|| format!("{}Variant{}", saved_type, i));
                 if let Some(ref_) = &schema.ref_ {
                     let type_ = self.type_ref(ref_);
                     (format_ident!("{}", &name), format_ident!("{}", &type_))

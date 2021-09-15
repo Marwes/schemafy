@@ -120,7 +120,26 @@ schemafy::schemafy!(
 
 #[test]
 fn one_of_parsing() {
-    let _: OneOfSchema = serde_json::from_str(r#"{"bar":2}"#).unwrap();
-    let _: OneOfSchema = serde_json::from_str(r#"{"foo":"baz"}"#).unwrap();
+    let t1: OneOfSchema = serde_json::from_str(r#"{"bar":2}"#).unwrap();
+    assert_eq!(
+        t1,
+        OneOfSchema::OneOfSchemaVariant0(OneOfSchemaVariant0 { bar: 2 })
+    );
+
+    let t2: OneOfSchema = serde_json::from_str(r#"{"foo":"baz"}"#).unwrap();
+    assert_eq!(
+        t2,
+        OneOfSchema::OneOfSchemaVariant1(OneOfSchemaVariant1 {
+            foo: "baz".to_string()
+        })
+    );
+
+    // This should return an error, but serde still parses it
+    let t3: OneOfSchema = serde_json::from_str(r#"{"bar": 2, "foo":"baz"}"#).unwrap();
+    assert_eq!(
+        t3,
+        OneOfSchema::OneOfSchemaVariant0(OneOfSchemaVariant0 { bar: 2 })
+    );
+
     assert!(serde_json::from_str::<OneOfSchema>(r#"{"foo":3}"#).is_err());
 }

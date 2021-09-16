@@ -91,9 +91,9 @@ mod _{}_{} {{
                 // on .is_ok(). For the negative test cases, a simple
                 // assert is the best we can do.
                 let assertion = if test.valid {
-                    "let _: Schema = serde_json::from_str(&data).unwrap();"
+                    "let _: Schema = serde_json::from_str(data).unwrap();"
                 } else {
-                    "assert!(serde_json::from_str::<Schema>(&data).is_err());"
+                    "assert!(serde_json::from_str::<Schema>(data).is_err());"
                 };
 
                 test_file.push_str(&format!(

@@ -33,7 +33,7 @@ impl<'a, 'b> Generator<'a, 'b> {
 
     pub fn generate(&self) -> proc_macro2::TokenStream {
         let input_file = if self.input_file.is_relative() {
-            let crate_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+            let crate_root = get_crate_root().unwrap();
             crate_root.join(self.input_file)
         } else {
             PathBuf::from(self.input_file)
@@ -102,4 +102,24 @@ impl<'a, 'b> GeneratorBuilder<'a, 'b> {
     pub fn build(self) -> Generator<'a, 'b> {
         self.inner
     }
+}
+
+fn get_crate_root() -> std::io::Result<PathBuf> {
+    if let Ok(path) = std::env::var("CARGO_MANIFEST_DIR") {
+        return Ok(PathBuf::from(path));
+    }
+
+    let current_dir = std::env::current_dir()?;
+
+    for p in current_dir.ancestors() {
+        if std::fs::read_dir(p)?
+            .into_iter()
+            .filter_map(Result::ok)
+            .any(|p| p.file_name().eq("Cargo.toml"))
+        {
+            return Ok(PathBuf::from(p));
+        }
+    }
+
+    Ok(current_dir)
 }

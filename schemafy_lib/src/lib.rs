@@ -135,14 +135,21 @@ pub fn str_to_ident(s: &str) -> syn::Ident {
 fn rename_keyword(prefix: &str, s: &str) -> Option<TokenStream> {
     let n = str_to_ident(s);
 
-    if n != s {
+    if n == s {
+        return None;
+    }
+
+    if prefix.is_empty() {
+        Some(quote! {
+            #[serde(rename = #s)]
+            #n
+        })
+    } else {
         let prefix = syn::Ident::new(prefix, Span::call_site());
         Some(quote! {
             #[serde(rename = #s)]
             #prefix #n
         })
-    } else {
-        None
     }
 }
 
@@ -392,7 +399,7 @@ impl<'r> Expander<'r> {
 
     fn schema_ref(&self, s: &str) -> &'r Schema {
         s.split('/').fold(self.root, |schema, comp| {
-            if comp == "#" {
+            if comp.ends_with('#') {
                 self.root
             } else if comp == "definitions" {
                 schema
@@ -517,7 +524,14 @@ impl<'r> Expander<'r> {
     }
 
     fn expand_one_of(&mut self, schemas: &[Schema]) -> (String, TokenStream) {
-        let saved_type = self.current_type.clone();
+        let current_field = if self.current_field.is_empty() {
+            "".to_owned()
+        } else {
+            str_to_ident(&self.current_field)
+                .to_string()
+                .to_pascal_case()
+        };
+        let saved_type = format!("{}{}", self.current_type, current_field);
         if schemas.is_empty() {
             return (saved_type, TokenStream::new());
         }
@@ -525,17 +539,15 @@ impl<'r> Expander<'r> {
             .iter()
             .enumerate()
             .map(|(i, schema)| {
-                let name = schema
-                    .id
-                    .clone()
-                    .unwrap_or_else(|| format!("{}Variant{}", saved_type, i));
+                let name = schema.id.clone().unwrap_or_else(|| format!("Variant{}", i));
                 if let Some(ref_) = &schema.ref_ {
                     let type_ = self.type_ref(ref_);
                     (format_ident!("{}", &name), format_ident!("{}", &type_))
                 } else {
-                    let field_type = self.expand_schema(&name, schema);
-                    self.types.push((name.clone(), field_type));
-                    (format_ident!("{}", &name), format_ident!("{}", &name))
+                    let type_name = format!("{}{}", saved_type, &name);
+                    let field_type = self.expand_schema(&type_name, schema);
+                    self.types.push((type_name.clone(), field_type));
+                    (format_ident!("{}", &name), format_ident!("{}", &type_name))
                 }
             })
             .unzip();

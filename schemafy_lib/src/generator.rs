@@ -54,12 +54,14 @@ impl<'a, 'b> Generator<'a, 'b> {
         expander.expand(&schema)
     }
 
-    pub fn generate_to_file(&self, output_file: &str) -> io::Result<()> {
+    pub fn generate_to_file<P: ?Sized + AsRef<Path>>(&self, output_file: &'b P) -> io::Result<()> {
         use std::process::Command;
         let tokens = self.generate();
         let out = tokens.to_string();
         std::fs::write(output_file, &out)?;
-        Command::new("rustfmt").arg(output_file).output()?;
+        Command::new("rustfmt")
+            .arg(output_file.as_ref().as_os_str())
+            .output()?;
         Ok(())
     }
 }

@@ -419,11 +419,15 @@ impl<'r> Expander<'r> {
         if type_name.to_pascal_case() == result.typ.to_pascal_case() {
             result.typ = format!("Box<{}>", result.typ)
         }
-        if !required && !result.default {
-            result.typ = format!("Option<{}>", result.typ);
-            result
-                .attributes
-                .push("skip_serializing_if=\"Option::is_none\"".into());
+        if !required {
+            if !result.default {
+                result.typ = format!("Option<{}>", result.typ);
+            }
+            if result.typ.starts_with("Option<") {
+                result
+                    .attributes
+                    .push("skip_serializing_if=\"Option::is_none\"".into());
+            }
         }
         result
     }

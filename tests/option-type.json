@@ -3,7 +3,13 @@
     "title": "option-type",
     "type": "object",
     "properties": {
-        "non-optional": { "type": "string" },
-        "optional": { "type": ["integer", "null"] }
-    }
+        "optional": { "type": "string" },
+        "optional-multi": { "type": ["integer", "null"] },
+        "required": { "type": "string" },
+        "required-multi": { "type": ["integer", "null"] }
+    },
+    "required": [
+        "required",
+        "required-multi"
+    ]
 }

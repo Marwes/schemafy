@@ -48,8 +48,49 @@ schemafy::schemafy!(
 fn option_type() {
     let o: Option<OptionType> = None;
     if let Some(o) = o {
-        let _: Option<i64> = o.optional;
+        let _: Option<String> = o.optional;
+        let _: Option<i64> = o.optional_multi;
+        let _: String = o.required;
+        let _: Option<i64> = o.required_multi;
     }
+    // FIXME: this fails
+    //serde_json::from_str::<OptionType>(r#"{"required": ""}"#).unwrap_err();
+    serde_json::from_str::<OptionType>(r#"{"required-multi": 5}"#).unwrap_err();
+    serde_json::from_str::<OptionType>(r#"{"required": "", "required-multi": 5}"#).unwrap();
+    assert_eq!(
+        serde_json::to_string(&OptionType {
+            optional: None,
+            optional_multi: None,
+            required: "".into(),
+            required_multi: None,
+        })
+        .unwrap(),
+        r#"{"required":"","required-multi":null}"#
+    );
+}
+
+schemafy::schemafy!(
+    root: ArrayType
+    "tests/array-type.json"
+);
+
+#[test]
+fn array_type() {
+    let o: Option<ArrayType> = None;
+    if let Some(o) = o {
+        let _: Vec<i64> = o.required;
+        let _: Option<Vec<i64>> = o.optional;
+    }
+    serde_json::from_str::<ArrayType>("{}").unwrap_err();
+    serde_json::from_str::<ArrayType>(r#"{"required": []}"#).unwrap();
+    assert_eq!(
+        serde_json::to_string(&ArrayType {
+            required: Vec::new(),
+            optional: None,
+        })
+        .unwrap(),
+        r#"{"required":[]}"#
+    );
 }
 
 schemafy::schemafy!(

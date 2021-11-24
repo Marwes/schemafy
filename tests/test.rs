@@ -57,6 +57,16 @@ fn option_type() {
     //serde_json::from_str::<OptionType>(r#"{"required": ""}"#).unwrap_err();
     serde_json::from_str::<OptionType>(r#"{"required-multi": 5}"#).unwrap_err();
     serde_json::from_str::<OptionType>(r#"{"required": "", "required-multi": 5}"#).unwrap();
+    assert_eq!(
+        serde_json::to_string(&OptionType {
+            optional: None,
+            optional_multi: None,
+            required: "".into(),
+            required_multi: None,
+        })
+        .unwrap(),
+        r#"{"required":"","required-multi":null}"#
+    );
 }
 
 schemafy::schemafy!(

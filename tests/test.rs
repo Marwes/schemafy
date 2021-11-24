@@ -48,8 +48,15 @@ schemafy::schemafy!(
 fn option_type() {
     let o: Option<OptionType> = None;
     if let Some(o) = o {
-        let _: Option<i64> = o.optional;
+        let _: Option<String> = o.optional;
+        let _: Option<i64> = o.optional_multi;
+        let _: String = o.required;
+        let _: Option<i64> = o.required_multi;
     }
+    // FIXME: this fails
+    //serde_json::from_str::<OptionType>(r#"{"required": ""}"#).unwrap_err();
+    serde_json::from_str::<OptionType>(r#"{"required-multi": 5}"#).unwrap_err();
+    serde_json::from_str::<OptionType>(r#"{"required": "", "required-multi": 5}"#).unwrap();
 }
 
 schemafy::schemafy!(

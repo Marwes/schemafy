@@ -1,0 +1,18 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "array-type",
+    "type": "object",
+    "properties": {
+        "required": {
+            "type": "array",
+            "items": { "type": "integer" }
+        },
+        "optional": {
+            "type": "array",
+            "items": { "type": "integer" }
+        }
+    },
+    "required": [
+        "required"
+    ]
+}

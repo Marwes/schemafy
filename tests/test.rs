@@ -53,6 +53,30 @@ fn option_type() {
 }
 
 schemafy::schemafy!(
+    root: ArrayType
+    "tests/array-type.json"
+);
+
+#[test]
+fn array_type() {
+    let o: Option<ArrayType> = None;
+    if let Some(o) = o {
+        let _: Vec<i64> = o.required;
+        let _: Option<Vec<i64>> = o.optional;
+    }
+    serde_json::from_str::<ArrayType>("{}").unwrap_err();
+    serde_json::from_str::<ArrayType>(r#"{"required": []}"#).unwrap();
+    assert_eq!(
+        serde_json::to_string(&ArrayType {
+            required: Vec::new(),
+            optional: None,
+        })
+        .unwrap(),
+        r#"{"required":[]}"#
+    );
+}
+
+schemafy::schemafy!(
     root: EmptyStruct
     "tests/empty-struct.json"
 );

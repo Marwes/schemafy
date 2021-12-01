@@ -178,3 +178,23 @@ fn one_of_parsing() {
 
     assert!(serde_json::from_str::<OneOfSchema>(r#"{"foo":3}"#).is_err());
 }
+
+schemafy::schemafy!(
+    root: PatternProperties
+    "tests/pattern-properties.json"
+);
+
+#[test]
+fn unknown_fields() {
+    // empty struct with additionalProperties: false
+    serde_json::from_str::<EmptyStruct>(r#"{"zzz": 5}"#).unwrap_err();
+    // non-empty struct with additionalProperties: false
+    serde_json::from_str::<RootArrayItem>(r#"{"zzz": 5}"#).unwrap_err();
+    // empty struct with additionalProperties: true
+    serde_json::from_str::<AnyProperties>(r#"{"zzz": 5}"#).unwrap();
+    // empty struct with additionalProperties: false and patternProperties
+    // non-empty
+    serde_json::from_str::<PatternProperties>(r#"{"zzz": 5}"#).unwrap();
+    // non-empty struct with additionalProperties unspecified
+    serde_json::from_str::<ArrayType>(r#"{"required": [], "zzz": 5}"#).unwrap();
+}

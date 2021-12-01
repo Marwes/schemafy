@@ -1,0 +1,12 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "pattern-properties",
+    "type": "object",
+    "additionalProperties": false,
+    "patternProperties": {
+        "foo": {
+            "type": "object",
+            "additionalProperties": true
+        }
+    }
+}

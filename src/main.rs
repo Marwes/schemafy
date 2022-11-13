@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, bail, Context, Result};
-use schemafy_lib::Generator;
+use schemafy_lib::{Generator, GeneratorOptions};
 use structopt::StructOpt;
 use tempfile::NamedTempFile;
 
@@ -18,16 +18,22 @@ struct Opts {
     output: Option<String>,
     /// JSON schema file
     schema_path: String,
+    /// Flag to allow new fields from the server.
+    #[structopt(long)]
+    allow_unknown_fields: bool,
 }
 
 pub fn main() -> Result<()> {
     let opts = Opts::from_args();
-
+    let generator_options = GeneratorOptions {
+        deny_unknown_fields: !opts.allow_unknown_fields,
+    };
     // generate the Rust code
     let mut generated_file = NamedTempFile::new()?;
     Generator::builder()
         .with_root_name_str(&opts.root)
         .with_input_file(&opts.schema_path)
+        .with_options(&generator_options)
         .build()
         .generate_to_file(
             &generated_file

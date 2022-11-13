@@ -69,7 +69,7 @@ use uriparse::{Fragment, URI};
 
 pub use schema::{Schema, SimpleTypes};
 
-pub use generator::{Generator, GeneratorBuilder};
+pub use generator::{Generator, GeneratorBuilder, GeneratorOptions};
 
 use proc_macro2::{Span, TokenStream};
 
@@ -310,10 +310,23 @@ impl<'a, 'r> FieldExpander<'a, 'r> {
     }
 }
 
+pub struct ExpanderOptions {
+    deny_unknown_fields: bool,
+}
+
+impl Default for ExpanderOptions {
+    fn default() -> Self {
+        ExpanderOptions {
+            deny_unknown_fields: true,
+        }
+    }
+}
+
 pub struct Expander<'r> {
     root_name: Option<&'r str>,
     schemafy_path: &'r str,
     root: &'r Schema,
+    options: &'r ExpanderOptions,
     current_type: String,
     current_field: String,
     types: Vec<(String, TokenStream)>,
@@ -343,11 +356,13 @@ impl<'r> Expander<'r> {
         root_name: Option<&'r str>,
         schemafy_path: &'r str,
         root: &'r Schema,
+        options: &'r ExpanderOptions,
     ) -> Expander<'r> {
         Expander {
             root_name,
             root,
             schemafy_path,
+            options,
             current_field: "".into(),
             current_type: "".into(),
             types: Vec::new(),
@@ -610,6 +625,7 @@ impl<'r> Expander<'r> {
         let type_decl = if is_struct {
             let serde_deny_unknown = if schema.additional_properties == Some(Value::Bool(false))
                 && schema.pattern_properties.is_empty()
+                && self.options.deny_unknown_fields
             {
                 Some(quote! { #[serde(deny_unknown_fields)] })
             } else {
@@ -796,7 +812,13 @@ mod tests {
     fn test_expander_type_ref() {
         let json = std::fs::read_to_string("src/schema.json").expect("Read schema JSON file");
         let schema = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{}", err));
-        let expander = Expander::new(Some("SchemaName"), "::schemafy_core::", &schema);
+        let expander_options = ExpanderOptions::default();
+        let expander = Expander::new(
+            Some("SchemaName"),
+            "::schemafy_core::",
+            &schema,
+            &expander_options,
+        );
 
         assert_eq!(expander.type_ref("normalField"), "NormalField");
         assert_eq!(expander.type_ref("#"), "SchemaName");
@@ -837,7 +859,8 @@ mod tests {
         let json = std::fs::read_to_string("tests/multiple-property-types.json")
             .expect("Read schema JSON file");
         let schema = serde_json::from_str(&json).unwrap();
-        let mut expander = Expander::new(Some("Root"), "UNUSED", &schema);
+        let expander_options = ExpanderOptions::default();
+        let mut expander = Expander::new(Some("Root"), "UNUSED", &schema, &expander_options);
         expander.expand(&schema);
 
         // check that the type names for embedded objects only include their

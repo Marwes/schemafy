@@ -1,8 +1,13 @@
-use crate::Expander;
+use crate::{Expander, ExpanderOptions};
 use std::{
     io,
     path::{Path, PathBuf},
 };
+
+#[derive(Debug, PartialEq)]
+pub struct GeneratorOptions {
+    pub deny_unknown_fields: bool,
+}
 
 /// A configurable builder for generating Rust types from a JSON
 /// schema.
@@ -23,6 +28,8 @@ pub struct Generator<'a, 'b> {
     pub schemafy_path: &'a str,
     /// The JSON schema file to read
     pub input_file: &'b Path,
+
+    pub generator_options: &'a GeneratorOptions,
 }
 
 impl<'a, 'b> Generator<'a, 'b> {
@@ -50,7 +57,15 @@ impl<'a, 'b> Generator<'a, 'b> {
                 err
             )
         });
-        let mut expander = Expander::new(self.root_name.as_deref(), self.schemafy_path, &schema);
+        let expander_options = ExpanderOptions {
+            deny_unknown_fields: self.generator_options.deny_unknown_fields,
+        };
+        let mut expander = Expander::new(
+            self.root_name.as_deref(),
+            self.schemafy_path,
+            &schema,
+            &expander_options,
+        );
         expander.expand(&schema)
     }
 
@@ -79,6 +94,9 @@ impl<'a, 'b> Default for GeneratorBuilder<'a, 'b> {
                 root_name: None,
                 schemafy_path: "::schemafy_core::",
                 input_file: Path::new("schema.json"),
+                generator_options: &GeneratorOptions {
+                    deny_unknown_fields: false,
+                },
             },
         }
     }
@@ -99,6 +117,10 @@ impl<'a, 'b> GeneratorBuilder<'a, 'b> {
     }
     pub fn with_schemafy_path(mut self, schemafy_path: &'a str) -> Self {
         self.inner.schemafy_path = schemafy_path;
+        self
+    }
+    pub fn with_options(mut self, generator_options: &'a GeneratorOptions) -> Self {
+        self.inner.generator_options = generator_options;
         self
     }
     pub fn build(self) -> Generator<'a, 'b> {

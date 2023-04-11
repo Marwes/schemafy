@@ -523,8 +523,6 @@ impl<'r> Expander<'r> {
                 SimpleTypes::Null => "()".into(),
                 
             }
-        } else if  typ.type_.len() == 0 {
-            "()".into(),
         }
         else {
             "serde_json::Value".into()

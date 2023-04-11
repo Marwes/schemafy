@@ -63,6 +63,7 @@ pub struct Schema {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "$id", alias = "id")]
     pub id: Option<String>,
     #[serde(default)]
     #[serde(with = "::schemafy_core::one_or_many")]

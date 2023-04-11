@@ -417,7 +417,7 @@ impl<'r> Expander<'r> {
         let mut result = self.expand_type_(typ);
         self.current_type = saved_type;
         if "()" == result.typ {
-            result.typ = format!("()")
+            result.typ = "()".into()
         } else if type_name.to_pascal_case() == result.typ.to_pascal_case() {
             result.typ = format!("Box<{}>", result.typ)
         }
@@ -552,7 +552,6 @@ impl<'r> Expander<'r> {
                     .unwrap_or_else(|| format!("Variant{}", i));
                 if let Some(ref_) = &schema.ref_ {
                     let type_ = self.type_ref(ref_);
-                    eprintln!("idk {} {}", &name, &type_);
                     (format_ident!("{}", &name), format_ident!("{}", &type_))
                 } else {
                     let type_name = format!("{}{}", saved_type, &name);

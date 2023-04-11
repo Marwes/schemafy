@@ -520,9 +520,13 @@ impl<'r> Expander<'r> {
                     });
                     format!("Vec<{}>", item_type).into()
                 }
-                _ => "serde_json::Value".into(),
+                SimpleTypes::Null => "()".into(),
+                
             }
-        } else {
+        } else if  typ.type_.len() == 0 {
+            "()".into(),
+        }
+        else {
             "serde_json::Value".into()
         }
     }

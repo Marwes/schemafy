@@ -416,7 +416,9 @@ impl<'r> Expander<'r> {
         let saved_type = self.current_type.clone();
         let mut result = self.expand_type_(typ);
         self.current_type = saved_type;
-        if type_name.to_pascal_case() == result.typ.to_pascal_case() {
+        if "()" == result.typ {
+            result.typ = format!("()")
+        } else if type_name.to_pascal_case() == result.typ.to_pascal_case() {
             result.typ = format!("Box<{}>", result.typ)
         }
         if !required {
@@ -521,10 +523,8 @@ impl<'r> Expander<'r> {
                     format!("Vec<{}>", item_type).into()
                 }
                 SimpleTypes::Null => "()".into(),
-                
             }
-        }
-        else {
+        } else {
             "serde_json::Value".into()
         }
     }
@@ -545,9 +545,14 @@ impl<'r> Expander<'r> {
             .iter()
             .enumerate()
             .map(|(i, schema)| {
-                let name = schema.title.as_ref().map(|title| title.to_pascal_case()).unwrap_or_else(|| format!("Variant{}", i));
+                let name = schema
+                    .title
+                    .as_ref()
+                    .map(|title| title.to_pascal_case())
+                    .unwrap_or_else(|| format!("Variant{}", i));
                 if let Some(ref_) = &schema.ref_ {
                     let type_ = self.type_ref(ref_);
+                    eprintln!("idk {} {}", &name, &type_);
                     (format_ident!("{}", &name), format_ident!("{}", &type_))
                 } else {
                     let type_name = format!("{}{}", saved_type, &name);

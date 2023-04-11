@@ -543,7 +543,7 @@ impl<'r> Expander<'r> {
             .iter()
             .enumerate()
             .map(|(i, schema)| {
-                let name = schema.id.clone().unwrap_or_else(|| format!("Variant{}", i));
+                let name = schema.title.clone().unwrap_or_else(|| format!("Variant{}", i));
                 if let Some(ref_) = &schema.ref_ {
                     let type_ = self.type_ref(ref_);
                     (format_ident!("{}", &name), format_ident!("{}", &type_))

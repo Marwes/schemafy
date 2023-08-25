@@ -608,29 +608,38 @@ impl<'r> Expander<'r> {
         };
         let is_enum = schema.enum_.as_ref().map_or(false, |e| !e.is_empty());
         let type_decl = if is_struct {
-            let serde_deny_unknown = if schema.additional_properties == Some(Value::Bool(false))
-                && schema.pattern_properties.is_empty()
-            {
-                Some(quote! { #[serde(deny_unknown_fields)] })
-            } else {
-                None
-            };
-            if default {
-                quote! {
-                    #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
-                    #serde_rename
-                    #serde_deny_unknown
-                    pub struct #name {
-                        #(#fields),*
-                    }
-                }
-            } else {
+            if !schema.pattern_properties.is_empty() {
                 quote! {
                     #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
                     #serde_rename
-                    #serde_deny_unknown
-                    pub struct #name {
-                        #(#fields),*
+                    #[serde(transparent)]
+                    pub struct #name(::std::collections::BTreeMap<String, serde_json::Value>);
+                }
+            } else {
+                let serde_deny_unknown = if schema.additional_properties == Some(Value::Bool(false))
+                    && schema.pattern_properties.is_empty()
+                {
+                    Some(quote! { #[serde(deny_unknown_fields)] })
+                } else {
+                    None
+                };
+                if default {
+                    quote! {
+                        #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
+                        #serde_rename
+                        #serde_deny_unknown
+                        pub struct #name {
+                            #(#fields),*
+                        }
+                    }
+                } else {
+                    quote! {
+                        #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+                        #serde_rename
+                        #serde_deny_unknown
+                        pub struct #name {
+                            #(#fields),*
+                        }
                     }
                 }
             }

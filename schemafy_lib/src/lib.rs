@@ -386,7 +386,10 @@ impl<'r> Expander<'r> {
         match schema.all_of {
             Some(ref all_of) if !all_of.is_empty() => {
                 if all_of.len() == 1 {
-                    Cow::Borrowed(&all_of[0])
+                    match all_of[0].ref_ {
+                        Some(ref ref_) => Cow::Borrowed(self.schema_ref(ref_)),
+                        None => Cow::Borrowed(&all_of[0]),
+                    }
                 } else {
                     all_of.iter().skip(1).fold(
                         self.schema(&all_of[0]).clone(),

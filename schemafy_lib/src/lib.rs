@@ -385,13 +385,17 @@ impl<'r> Expander<'r> {
         };
         match schema.all_of {
             Some(ref all_of) if !all_of.is_empty() => {
-                all_of
-                    .iter()
-                    .skip(1)
-                    .fold(self.schema(&all_of[0]).clone(), |mut result, def| {
-                        merge_all_of(result.to_mut(), &self.schema(def));
-                        result
-                    })
+                if all_of.len() == 1 {
+                    Cow::Borrowed(&all_of[0])
+                } else {
+                    all_of.iter().skip(1).fold(
+                        self.schema(&all_of[0]).clone(),
+                        |mut result, def| {
+                            merge_all_of(result.to_mut(), &self.schema(def));
+                            result
+                        },
+                    )
+                }
             }
             _ => Cow::Borrowed(schema),
         }

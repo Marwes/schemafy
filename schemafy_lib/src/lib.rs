@@ -526,6 +526,12 @@ impl<'r> Expander<'r> {
                 }
                 _ => "serde_json::Value".into(),
             }
+        } else if typ
+            .all_of
+            .as_ref()
+            .map_or(false, |all_of| all_of.len() == 1)
+        {
+            self.expand_type_(&typ.all_of.as_ref().unwrap()[0])
         } else {
             "serde_json::Value".into()
         }

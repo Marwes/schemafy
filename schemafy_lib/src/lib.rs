@@ -384,10 +384,10 @@ impl<'r> Expander<'r> {
             None => schema,
         };
         match schema.all_of {
-            Some(ref all_of) if all_of.len() == 1 => match all_of[0].ref_ {
-                Some(ref ref_) => Cow::Borrowed(self.schema_ref(ref_)),
-                None => Cow::Borrowed(&all_of[0]),
-            },
+            // Some(ref all_of) if all_of.len() == 1 => match all_of[0].ref_ {
+            //     Some(ref ref_) => Cow::Borrowed(self.schema_ref(ref_)),
+            //     None => Cow::Borrowed(&all_of[0]),
+            // },
             Some(ref all_of) if !all_of.is_empty() => {
                 all_of
                     .iter()
